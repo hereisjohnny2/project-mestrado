@@ -1,0 +1,12 @@
+#!/bin/bash
+
+echo "Applying Binarization over images"
+
+MODEL=$1
+FILE_DIR=$(pwd)/$2
+OUTPUT_DIR=$FILE_DIR/$3
+
+mkdir -p $OUTPUT_DIR
+for f in $(find $FILE_DIR/*.png); do
+    python rock-nn/main.py --save -i $f -m $(pwd)/$MODEL -o $OUTPUT_DIR
+done

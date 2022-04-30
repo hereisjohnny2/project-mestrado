@@ -1,0 +1,9 @@
+#!/bin/bash
+
+echo "Training Script"
+
+FILE_DIR=$(pwd)/$1
+
+for dataset in $(find $FILE_DIR/*.dat); do
+    python rock-nn/main.py -t $dataset
+done

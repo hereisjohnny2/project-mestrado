@@ -1,0 +1,10 @@
+#!/bin/bash
+
+echo "Running Script"
+
+for f in "$(pwd)/images"/*; do
+    for dataset in $(find $f -name "*.dat"); do
+        echo "Training with $dataset"
+        python rock-nn/main.py -t $dataset
+    done
+done

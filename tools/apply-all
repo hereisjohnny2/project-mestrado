@@ -1,0 +1,19 @@
+#!/bin/bash
+
+IMAGES_DIR=$1
+WORKING_DIR=$(pwd)/$IMAGES_DIR
+OUTPUT_DIRNAME="it-timed"
+
+for d in $(ls -d $WORKING_DIR/*); do
+    echo "Working directory $d"
+    COUNT=1
+    for m in $(find $d -name "*.pt"); do
+        OUTPUT_DIR=$d/$OUTPUT_DIRNAME-$COUNT
+        MODEL=$m
+        mkdir -p $OUTPUT_DIR
+        for f in $(find $d/*.png); do
+            python rock-nn/main.py --save -i $f -m $MODEL -o $OUTPUT_DIR
+        done
+        COUNT=$(($COUNT+1))
+    done
+done

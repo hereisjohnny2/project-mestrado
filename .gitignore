@@ -1,0 +1,4 @@
+images
+.pyc
+.vscode
+__pycache__
