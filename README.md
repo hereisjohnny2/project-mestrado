@@ -26,25 +26,25 @@ No texto do trabalho é possível encontrar mais informações sobre os resultad
 Após clonar esse repositório, crie um ambiente virtual para executar o python e baixar suas dependências:
 
 ```shell
-$ python -m venv venv
+python -m venv venv
 ```
 
 Em seguida, ative o ambiente virtual:
 
 ```shell
-$ source venv/bin/activate 
+source venv/bin/activate 
 ```
 
 Instale então as dependências do projeto:
 
 ```shell
-$ pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 Para treinar um novo modelo a partir de um *dataset* em arquivo de texto com um determinado número de épocas, digite no terminal:
 
 ```shell
-$ python rock-nn/main.py -t <caminho-para-dataset> -e <numero-de-epocas>
+python rock-nn/main.py -t <caminho-para-dataset> -e <numero-de-epocas>
 ```
 
 Para aplicar o modelo treinado sobre uma imagem entre o o seguinte comando no terminal:
