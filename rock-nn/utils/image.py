@@ -3,7 +3,6 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-from zmq import device
 from utils.time_messure import timing_decorator
 
 def binarize(arr, img_size, net):

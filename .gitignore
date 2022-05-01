@@ -2,3 +2,4 @@ images
 .pyc
 .vscode
 __pycache__
+venv
