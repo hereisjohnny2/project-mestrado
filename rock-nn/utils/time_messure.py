@@ -5,8 +5,8 @@ def timing_decorator(func):
         start = time.time()
         original_return_val = func(*args, **kwargs)
         end = time.time()
-        time_elapsed = end - start
-        print("time elapsed in ", func.__name__, ": ", time_elapsed, sep='')
+        time_elapsed = (end - start) * 1000
+        print("time elapsed in ", func.__name__, ": ", time_elapsed, "ms", sep='')
         return original_return_val, time_elapsed
 
     return wrapper
