@@ -71,8 +71,8 @@ gerar dataset → treinar → ver métricas → publicar modelo versionado`
 `Escolher modelo → subir um lote de imagens → rodar → galeria com original ×
 binarizada × overlay + tabela de porosidade → exportar CSV/ZIP`
 
-Premissas assumidas (confirme em §9):
-- uso local ou em um servidor do laboratório, **um usuário** (sem login na v1);
+Premissas (confirmadas em §9):
+- uso local via `docker compose`, **um usuário**, sem login na v1;
 - imagens de até ~4000×4000, lotes de até algumas centenas;
 - GPU opcional — tudo tem que rodar em CPU.
 
@@ -334,11 +334,11 @@ manter o modelo como está:
 
 ---
 
-## 9. Decisões em aberto
+## 9. Decisões tomadas
 
-1. **Repositório:** este repo vira o monorepo da versão web (com `rock-nn` movido
-   para `legacy/`), ou crio um repositório novo e deixo este como referência?
-2. **Anotação:** só pincel e borracha (como o app Qt), ou já entram retângulo,
-   polígono e balde por tolerância?
-3. **Usuários:** monousuário local, ou já prever login para o laboratório?
-4. **Deploy:** só `docker compose up` na máquina, ou servidor com GPU?
+| Questão | Decisão |
+|---|---|
+| **Repositório** | Este repo vira o monorepo da versão web. `rock-nn/` e `tools/` migram para `legacy/`, preservados para o teste de paridade (§3.3). |
+| **Anotação** | Pincel, borracha, retângulo e polígono na v1. Balde por tolerância de cor fica para depois (risco de induzir viés na marcação). |
+| **Usuários** | Monousuário, sem autenticação. O modelo de dados já tem `Project`, então login pode ser acrescentado depois sem refatorar. |
+| **Deploy** | `docker compose up` local, CPU. O código mantém a detecção de GPU que já existe hoje (`torch.cuda.is_available()`), então um servidor com GPU funciona sem mudança. |
