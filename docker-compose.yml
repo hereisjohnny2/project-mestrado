@@ -1,0 +1,24 @@
+# Fase 0: sobe backend (FastAPI) + frontend (placeholder) para provar que a
+# base está de pé. Plano §4.1 / §9 (deploy: docker compose local, CPU).
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - storage:/app/storage
+    environment:
+      - ROCKSEG_STORAGE_DIR=/app/storage
+      - ROCKSEG_DATABASE_URL=sqlite:////app/storage/db.sqlite3
+      - ROCKSEG_CORS_ORIGINS=["http://localhost:5173"]
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  storage:

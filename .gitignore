@@ -1,5 +1,22 @@
 images
-.pyc
+*.pyc
+__pycache__/
 .vscode
-__pycache__
 venv
+.venv
+
+# backend
+backend/storage/
+backend/.pytest_cache/
+backend/*.egg-info/
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# misc
+*.pt
+*.dat
+.DS_Store
+frontend/tsconfig.tsbuildinfo

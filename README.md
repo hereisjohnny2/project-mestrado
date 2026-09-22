@@ -1,60 +1,82 @@
-# Project Mestrado - Scripts Python
+# Rock Segmentation — versão web
 
-## Sobre 
+Versão web do projeto de mestrado: anotação de regiões de interesse (poro ×
+sólido), treino de uma rede neural sobre essas anotações e aplicação em
+lote sobre outros bancos de imagens.
 
-Neste repositório são encontrados os scripts em `python` e `shell` para executar o treinamento e aplicação de uma rede neural sobre amostras de rochas digitais. O trabalho completo pode ser encontrado em seu próprio [repositório](https://github.com/hereisjohnny2/TeseMestrado).
+O plano completo de desenvolvimento está em [`docs/PLANO-WEB.md`](docs/PLANO-WEB.md).
 
-Durante o processo de treinamento um arquivo em formato de texto, contendo os valores de Vermelho, Verde, Azul e *label* de vários pixeis de um determinada imagem, é utilizado para alimentar a rede neural, linha a linha. Esse *dataset* é dividido em dados de treino e de teste, onde 30% dos dados são categorizados como teste e 70% como treino.
+## Estrutura
 
-Na entrada da rede neural são utilizados 3 neurônios, cada um representando um canal de cor, e na sua saída, apenas dois, um representando o valore obtido para categoria **Poro** e outro para a categoria **Solido**. O maior desses valores é comparado com a *label* do *dataset*, o erro obtido é propagado pela rede por meio do algoritmo de *Backpropagation* e o processo se repete para dos os dados treinamento por *n* épocas. 
-
-Ao final do treinamento, é realizado o processo de teste, onde os valores do *dataset* de teste são aplicados à rede neural a fim de se verificar sua acurácia.
-
-O resultado deste processo como um todo gera um arquivo `.pt`, que contém os valores do pesos e biases da rede após o treinamento. Esses valores então são carregados para que as imagens sejam aplicadas à ele, gerando como resultado um arquivo com os valores de **porosidade** e a imagem binarizada.
-
-No texto do trabalho é possível encontrar mais informações sobre os resultados obtidos e a teoria por trás das inteligência artificial aplicada a rocha digital.
-
-## Tecnologias
-
-- [PyTorch](https://pytorch.org/)
-- [NumPy](https://numpy.org/)
-- [Matplotlib](https://matplotlib.org/)
-- [Pillow](https://pillow.readthedocs.io/en/stable/)
-
-## Rodando o projeto
-
-Após clonar esse repositório, crie um ambiente virtual para executar o python e baixar suas dependências:
-
-```shell
-python -m venv venv
+```
+.
+├── backend/    FastAPI + SQLite + PyTorch (núcleo de ML portado de legacy/)
+├── frontend/   React + TypeScript + Vite
+├── legacy/     as duas aplicações originais do mestrado (congeladas)
+└── docs/       plano de desenvolvimento
 ```
 
-Em seguida, ative o ambiente virtual:
+## `legacy/`
+
+O código original do mestrado, preservado sem alterações:
+
+- `legacy/rock-nn/` — CLI Python/PyTorch de treino e aplicação do modelo
+  (ver `legacy/README.md` para instruções de uso).
+- `legacy/tools/` — scripts shell para rodar treino/aplicação em lote.
+
+O app de anotação em C++/Qt que gerava os arquivos `.dat` vive em seu
+próprio repositório: [`rock-image-annotation`](https://github.com/hereisjohnny2/rock-image-annotation).
+
+Esse código é a referência de comportamento: `backend/app/ml/` é um porte
+dele, e um teste de paridade (`backend/tests/test_parity.py`) garante que o
+treino e a inferência produzem resultados numericamente idênticos aos do
+CLI original — ver plano §3.3.
+
+## Rodando com Docker
 
 ```shell
-source venv/bin/activate 
+docker compose up --build
 ```
 
-Instale então as dependências do projeto:
+- Backend (FastAPI): http://localhost:8000 — `/health` para checar o status.
+- Frontend: http://localhost:5173
+
+## Desenvolvimento local
+
+### Backend
 
 ```shell
+cd backend
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
 
-Para treinar um novo modelo a partir de um *dataset* em arquivo de texto com um determinado número de épocas, digite no terminal:
+> `requirements.txt` pede a build CPU do PyTorch (`torch==2.3.1+cpu`) via
+> `download.pytorch.org`. Se sua rede/proxy bloquear esse host, instale a
+> build padrão do PyPI em vez dela — funciona igual em CPU, só ocupa mais
+> espaço em disco por trazer bibliotecas CUDA não usadas:
+> `pip install torch==2.3.1 -r <(grep -v torch requirements.txt)`.
+
+Rodar os testes (inclui o teste de paridade contra `legacy/rock-nn`):
 
 ```shell
-python rock-nn/main.py -t <caminho-para-dataset> -e <numero-de-epocas>
+cd backend
+pytest -v
 ```
 
-Para aplicar o modelo treinado sobre uma imagem entre o o seguinte comando no terminal:
+### Frontend
 
 ```shell
-python rock-nn/main.py --save -i <caminho-para-imagem> -m <caminho-para-modelo> -o <diretorio-de-saida>
+cd frontend
+npm install
+npm run dev
 ```
 
-Algumas imagens podem não possuir os canais de cores em `RGB` e isso pode atrapalhar ou confundir a aplicação do modelo. Para isso execute o comando abaixo para convert a imagem diretamente para `.png` com os canais em `RGB`:
+## Estado atual
 
-```shell
-python rock-nn/main.py -i <caminho-para-imagem>
-```
+Fase 0 do plano: fundação do backend, porte do núcleo de ML com teste de
+paridade, e esqueleto do frontend. As telas de anotação, treino e
+segmentação ainda não existem — ver `docs/PLANO-WEB.md` para as próximas
+fases.
