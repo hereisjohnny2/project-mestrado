@@ -21,7 +21,9 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        # requirements-test.txt = requirements.txt + matplotlib, needed only
+        # to import legacy/rock-nn from the parity test (see that file).
+        run: pip install -r requirements-test.txt
 
       # The parity test in here is the acceptance criterion for the ML
       # port (plan §3.3): it fails the build if backend/app/ml ever drifts

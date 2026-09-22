@@ -1,0 +1,6 @@
+# Extra deps needed only to import legacy/rock-nn from the parity test
+# (backend/tests/test_parity.py). Not a production dependency of the new
+# backend — legacy/rock-nn/utils/image.py imports matplotlib just for its
+# unused show_image() debug helper.
+-r requirements.txt
+matplotlib==3.9.0

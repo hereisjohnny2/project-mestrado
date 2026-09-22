@@ -59,10 +59,13 @@ uvicorn app.main:app --reload
 > espaço em disco por trazer bibliotecas CUDA não usadas:
 > `pip install torch==2.3.1 -r <(grep -v torch requirements.txt)`.
 
-Rodar os testes (inclui o teste de paridade contra `legacy/rock-nn`):
+Rodar os testes (inclui o teste de paridade contra `legacy/rock-nn`, que
+por sua vez precisa do `matplotlib` — só para importar `legacy/rock-nn`,
+não é dependência do backend novo):
 
 ```shell
 cd backend
+pip install -r requirements-test.txt
 pytest -v
 ```
 
