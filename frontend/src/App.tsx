@@ -1,7 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 import { RequireAuth } from "./components/AuthProvider";
 import AppLayout from "./components/AppLayout";
-import AuthPage from "./pages/AuthPage";
+import LoginPage from "./pages/LoginPage";
 import AccountPage from "./pages/AccountPage";
 import ProjectListPage from "./pages/ProjectListPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
@@ -13,8 +13,7 @@ import SegmentationPage from "./pages/SegmentationPage";
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<AuthPage mode="login" />} />
-      <Route path="/register" element={<AuthPage mode="register" />} />
+      <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<ProjectListPage />} />

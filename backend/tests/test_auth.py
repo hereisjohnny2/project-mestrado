@@ -15,7 +15,7 @@ def _png(size=(4, 4)) -> bytes:
     return buf.getvalue()
 
 
-def test_register_login_logout_me(anon_client):
+def test_login_logout_me(anon_client):
     assert anon_client.get("/auth/me").status_code == 401
 
     user = register(anon_client, email="  Ana@Example.com ")
@@ -31,12 +31,10 @@ def test_register_login_logout_me(anon_client):
     assert anon_client.get("/auth/me").status_code == 200
 
 
-def test_register_validation_and_duplicates(anon_client):
-    register(anon_client)
-    dup = anon_client.post("/auth/register", json={"email": "ana@example.com", "name": "X", "password": "outra-senha-1"})
-    assert dup.status_code == 409
-    assert anon_client.post("/auth/register", json={"email": "nope", "name": "X", "password": "outra-senha-1"}).status_code == 422
-    assert anon_client.post("/auth/register", json={"email": "b@example.com", "name": "X", "password": "curta"}).status_code == 422
+def test_no_public_signup(anon_client):
+    resp = anon_client.post("/auth/register", json={"email": "x@example.com", "name": "X", "password": "senha-forte-123"})
+    assert resp.status_code in (404, 405)
+    assert anon_client.get("/auth/me").status_code == 401
 
 
 def test_login_rejects_bad_credentials(anon_client):

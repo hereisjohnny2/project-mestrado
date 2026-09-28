@@ -52,8 +52,13 @@ def app_factory(tmp_path, monkeypatch):
 
 
 def register(client, email="ana@example.com", name="Ana", password="senha-forte-123"):
-    resp = client.post("/auth/register", json={"email": email, "name": name, "password": password})
-    assert resp.status_code == 201, resp.text
+    """Accounts are admin-created (no sign-up endpoint): create the user with
+    the same script an admin would use, then log the client in."""
+    from app.create_user import main as create_user
+
+    assert create_user([email, "--name", name, "--password", password]) == 0
+    resp = client.post("/auth/login", json={"email": email.strip().lower(), "password": password})
+    assert resp.status_code == 200, resp.text
     return resp.json()
 
 

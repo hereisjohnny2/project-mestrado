@@ -1,4 +1,6 @@
-"""Registration, login/logout (HttpOnly session cookie) and the user area."""
+"""Login/logout (HttpOnly session cookie) and the user area. There is no
+self-service sign-up: accounts are created by an admin with
+``python -m app.create_user``."""
 
 from __future__ import annotations
 
@@ -10,7 +12,7 @@ from ..core.config import get_settings
 from ..core.security import create_access_token, hash_password, verify_password
 from ..db import models
 from ..db.session import get_db
-from ..schemas import LoginRequest, MyModelOut, MyProjectOut, RegisterRequest, UserOut
+from ..schemas import LoginRequest, MyModelOut, MyProjectOut, UserOut
 from .deps import COOKIE_NAME, get_current_user
 
 router = APIRouter()
@@ -31,18 +33,6 @@ def _set_session_cookie(response: Response, user: models.User) -> None:
         secure=settings.cookie_secure,
         path="/",
     )
-
-
-@router.post("/auth/register", response_model=UserOut, status_code=201)
-def register(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)) -> models.User:
-    if db.query(models.User).filter(models.User.email == payload.email).first() is not None:
-        raise HTTPException(409, "email already registered")
-    user = models.User(email=payload.email, name=payload.name, password_hash=hash_password(payload.password))
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    _set_session_cookie(response, user)
-    return user
 
 
 @router.post("/auth/login", response_model=UserOut)

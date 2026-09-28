@@ -104,14 +104,6 @@ export function login(email: string, password: string): Promise<User> {
   });
 }
 
-export function register(name: string, email: string, password: string): Promise<User> {
-  return request("/api/auth/register", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, email, password }),
-  });
-}
-
 export function logout(): Promise<void> {
   return request("/api/auth/logout", { method: "POST" });
 }

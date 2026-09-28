@@ -1,27 +1,19 @@
 import { FormEvent, useState } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useAuth } from "../components/AuthProvider";
 
-const MIN_PASSWORD = 8;
-
-function messageFor(e: unknown, mode: "login" | "register"): string {
-  if (e instanceof ApiError) {
-    if (e.status === 401) return "E-mail ou senha incorretos.";
-    if (e.status === 409) return "Este e-mail já está cadastrado.";
-    if (e.status === 422) return "Verifique os dados informados.";
-    return e.userMessage;
-  }
-  return mode === "login" ? "Não foi possível entrar." : "Não foi possível criar a conta.";
+function messageFor(e: unknown): string {
+  if (e instanceof ApiError) return e.status === 401 ? "E-mail ou senha incorretos." : e.userMessage;
+  return "Não foi possível entrar.";
 }
 
-export default function AuthPage({ mode }: { mode: "login" | "register" }) {
-  const { user, login, register } = useAuth();
+export default function LoginPage() {
+  const { user, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? "/";
 
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -29,22 +21,15 @@ export default function AuthPage({ mode }: { mode: "login" | "register" }) {
 
   if (user) return <Navigate to={from} replace />;
 
-  const isLogin = mode === "login";
-
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!isLogin && password.length < MIN_PASSWORD) {
-      setError(`A senha deve ter pelo menos ${MIN_PASSWORD} caracteres.`);
-      return;
-    }
     setBusy(true);
     try {
-      if (isLogin) await login(email.trim(), password);
-      else await register(name.trim(), email.trim(), password);
+      await login(email.trim(), password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(messageFor(err, mode));
+      setError(messageFor(err));
     } finally {
       setBusy(false);
     }
@@ -56,22 +41,9 @@ export default function AuthPage({ mode }: { mode: "login" | "register" }) {
   return (
     <main className="mx-auto max-w-sm px-6 py-16">
       <h1 className="text-2xl font-semibold text-zinc-100">Rock Segmentation</h1>
-      <p className="mt-1 text-zinc-400">{isLogin ? "Entre na sua conta." : "Crie sua conta."}</p>
+      <p className="mt-1 text-zinc-400">Entre na sua conta.</p>
 
       <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-3">
-        {!isLogin && (
-          <label className="flex flex-col gap-1 text-sm text-zinc-300">
-            Nome
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoComplete="name"
-              required
-              maxLength={100}
-              className={field}
-            />
-          </label>
-        )}
         <label className="flex flex-col gap-1 text-sm text-zinc-300">
           E-mail
           <input
@@ -89,11 +61,10 @@ export default function AuthPage({ mode }: { mode: "login" | "register" }) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete={isLogin ? "current-password" : "new-password"}
+            autoComplete="current-password"
             required
             className={field}
           />
-          {!isLogin && <span className="text-xs text-zinc-500">Mínimo de {MIN_PASSWORD} caracteres.</span>}
         </label>
 
         {error && (
@@ -107,20 +78,11 @@ export default function AuthPage({ mode }: { mode: "login" | "register" }) {
           disabled={busy}
           className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy ? "Aguarde..." : isLogin ? "Entrar" : "Criar conta"}
+          {busy ? "Aguarde..." : "Entrar"}
         </button>
       </form>
 
-      <p className="mt-4 text-sm text-zinc-400">
-        {isLogin ? "Ainda não tem conta? " : "Já tem conta? "}
-        <Link
-          to={isLogin ? "/register" : "/login"}
-          state={location.state}
-          className="text-blue-400 hover:text-blue-300"
-        >
-          {isLogin ? "Criar conta" : "Entrar"}
-        </Link>
-      </p>
+      <p className="mt-4 text-sm text-zinc-500">Não tem acesso? Peça a um administrador para criar sua conta.</p>
     </main>
   );
 }

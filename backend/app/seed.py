@@ -5,8 +5,8 @@ and one trained + published model.
 
     python -m app.seed [--url http://localhost:8000] [--email E --password P]
 
-The demo belongs to a user: the given account is logged into, or created if
-it doesn't exist yet (default demo@example.com).
+The demo belongs to a user: the given account must already exist (create it
+with ``python -m app.create_user``; default demo@example.com).
 
 Everything goes through the public HTTP API, so it also works from the host
 against ``docker compose up`` (``docker compose exec backend python -m app.seed``).
@@ -78,12 +78,13 @@ def wait_for(client: httpx.Client, path: str) -> dict:
 
 
 def authenticate(client: httpx.Client, email: str, password: str) -> None:
-    """Logs in, registering the account first if it doesn't exist. The
-    session cookie is kept by the client for the following calls."""
-    creds = {"email": email, "password": password}
-    if client.post("/auth/login", json=creds).status_code == 200:
-        return
-    client.post("/auth/register", json={**creds, "name": "Demo"}).raise_for_status()
+    """Logs in; the session cookie is kept by the client for the following
+    calls. Accounts are admin-created, so a missing one is an error."""
+    resp = client.post("/auth/login", json={"email": email, "password": password})
+    if resp.status_code != 200:
+        raise SystemExit(
+            f"Login falhou para {email}. Crie a conta antes: python -m app.create_user {email}"
+        )
 
 
 def seed(client: httpx.Client) -> None:
