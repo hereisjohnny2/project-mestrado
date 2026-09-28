@@ -35,6 +35,42 @@ function Bars({ values, color }: { values: number[]; color: string }) {
   );
 }
 
+function LossChart({ values, totalEpochs }: { values: number[]; totalEpochs?: number }) {
+  const W = 480;
+  const H = 160;
+  const pad = { l: 44, r: 12, t: 10, b: 24 };
+  const n = Math.max(totalEpochs ?? 0, values.length, 2);
+  const max = Math.max(...values, 1e-9);
+  const min = Math.min(...values, 0);
+  const x = (i: number) => pad.l + (i / (n - 1)) * (W - pad.l - pad.r);
+  const y = (v: number) => pad.t + (1 - (v - min) / (max - min || 1)) * (H - pad.t - pad.b);
+  const points = values.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+  const ticks = [max, (max + min) / 2, min];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Curva de perda por época">
+      {ticks.map((t, i) => (
+        <g key={i}>
+          <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="#3f3f46" strokeDasharray="3 3" />
+          <text x={pad.l - 6} y={y(t) + 3} textAnchor="end" fontSize="10" fill="#a1a1aa">
+            {t.toFixed(3)}
+          </text>
+        </g>
+      ))}
+      {values.length > 1 && <polyline points={points} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />}
+      {values.map((v, i) => (
+        <circle key={i} cx={x(i)} cy={y(v)} r="3" fill="#3b82f6">
+          <title>{`Época ${i + 1}: ${v.toFixed(4)}`}</title>
+        </circle>
+      ))}
+      <text x={pad.l} y={H - 6} fontSize="10" fill="#a1a1aa">1</text>
+      <text x={W - pad.r} y={H - 6} textAnchor="end" fontSize="10" fill="#a1a1aa">
+        época {n}
+      </text>
+    </svg>
+  );
+}
+
 function Histogram({ histogram }: { histogram: DatasetHistogram }) {
   return (
     <div className="grid grid-cols-2 gap-6">
@@ -133,6 +169,54 @@ export default function TrainingPage() {
     }
   };
 
+  const jobStorageKey = `training-job:${projectId}`;
+
+  const rememberJob = (id: string | null) => {
+    try {
+      if (id) localStorage.setItem(jobStorageKey, id);
+      else localStorage.removeItem(jobStorageKey);
+    } catch {
+      // storage unavailable — the job just won't survive a reload.
+    }
+  };
+
+  // Streams progress for a job that lives on the backend, so it can be
+  // (re)attached after a page reload.
+  const followJob = (jobId: string) => {
+    eventSourceRef.current?.close();
+    const es = new EventSource(trainingJobStreamUrl(jobId));
+    eventSourceRef.current = es;
+    es.onmessage = (evt) => {
+      const snapshot: TrainingJob = JSON.parse(evt.data);
+      setJob(snapshot);
+      if (snapshot.status === "done" || snapshot.status === "failed") {
+        es.close();
+      }
+    };
+    es.onerror = () => {
+      es.close();
+      getTrainingJob(jobId).then(setJob).catch(() => undefined);
+    };
+  };
+
+  useEffect(() => {
+    if (!projectId) return;
+    let id: string | null = null;
+    try {
+      id = localStorage.getItem(jobStorageKey);
+    } catch {
+      return;
+    }
+    if (!id) return;
+    getTrainingJob(id)
+      .then((restored) => {
+        setJob(restored);
+        if (restored.status === "pending" || restored.status === "running") followJob(restored.id);
+      })
+      .catch(() => rememberJob(null)); // job gone (e.g. backend restarted)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
   const onStartTraining = async () => {
     if (!selectedDatasetId) return;
     setStarting(true);
@@ -148,20 +232,8 @@ export default function TrainingPage() {
         seed: config.seed === "" ? null : Number(config.seed),
       });
       setJob(created);
-
-      const es = new EventSource(trainingJobStreamUrl(created.id));
-      eventSourceRef.current = es;
-      es.onmessage = (evt) => {
-        const snapshot: TrainingJob = JSON.parse(evt.data);
-        setJob(snapshot);
-        if (snapshot.status === "done" || snapshot.status === "failed") {
-          es.close();
-        }
-      };
-      es.onerror = () => {
-        es.close();
-        getTrainingJob(created.id).then(setJob).catch(() => undefined);
-      };
+      rememberJob(created.id);
+      followJob(created.id);
     } catch (e) {
       showError(e, "Não foi possível iniciar o treino.");
     } finally {
@@ -343,6 +415,9 @@ export default function TrainingPage() {
                   Época {job.epoch} de {job.epochs}
                   {job.loss_curve.length > 0 && ` — perda: ${job.loss_curve[job.loss_curve.length - 1].toFixed(4)}`}
                 </p>
+                <div className="mt-3">
+                  <LossChart values={job.loss_curve} totalEpochs={job.epochs} />
+                </div>
               </div>
             )}
 
@@ -361,7 +436,7 @@ export default function TrainingPage() {
 
                 <div>
                   <p className="mb-1 text-xs text-zinc-400">Curva de perda</p>
-                  <Bars values={job.metrics.loss_curve} color="#3b82f6" />
+                  <LossChart values={job.metrics.loss_curve} />
                 </div>
 
                 <table className="w-full text-sm text-zinc-300">
