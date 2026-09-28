@@ -3,7 +3,10 @@ something to click on: synthetic "rock" images (dark pores on a lighter,
 grainy solid), a pre-painted annotation mask for each, a generated dataset,
 and one trained + published model.
 
-    python -m app.seed [--url http://localhost:8000]
+    python -m app.seed [--url http://localhost:8000] [--email E --password P]
+
+The demo belongs to a user: the given account must already exist (create it
+with ``python -m app.create_user``; default demo@example.com).
 
 Everything goes through the public HTTP API, so it also works from the host
 against ``docker compose up`` (``docker compose exec backend python -m app.seed``).
@@ -74,6 +77,16 @@ def wait_for(client: httpx.Client, path: str) -> dict:
     raise TimeoutError(path)
 
 
+def authenticate(client: httpx.Client, email: str, password: str) -> None:
+    """Logs in; the session cookie is kept by the client for the following
+    calls. Accounts are admin-created, so a missing one is an error."""
+    resp = client.post("/auth/login", json={"email": email, "password": password})
+    if resp.status_code != 200:
+        raise SystemExit(
+            f"Login falhou para {email}. Crie a conta antes: python -m app.create_user {email}"
+        )
+
+
 def seed(client: httpx.Client) -> None:
     if any(p["name"] == PROJECT_NAME for p in client.get("/projects").json()):
         print(f"Projeto '{PROJECT_NAME}' já existe — nada a fazer.")
@@ -113,8 +126,11 @@ def seed(client: httpx.Client) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--url", default="http://localhost:8000")
+    parser.add_argument("--email", default="demo@example.com")
+    parser.add_argument("--password", default="demo-password")
     args = parser.parse_args()
     with httpx.Client(base_url=args.url, timeout=60) as client:
+        authenticate(client, args.email, args.password)
         seed(client)
 
 

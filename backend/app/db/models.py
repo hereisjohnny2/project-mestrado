@@ -35,13 +35,29 @@ class RunStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    projects: Mapped[list["Project"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
+
+
 class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    # Nullable only so pre-auth databases can be upgraded in place (see
+    # init_db); such legacy rows have no owner and are not visible to anyone.
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    owner: Mapped["User | None"] = relationship(back_populates="projects")
     images: Mapped[list["Image"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     datasets: Mapped[list["Dataset"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 

@@ -50,9 +50,21 @@ Produção local (reinício automático, só o frontend exposto, porta em
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
+### Usuários
+
+Não há cadastro pela interface: as contas são criadas só pelo administrador,
+direto no servidor (a senha é pedida sem eco):
+
+```shell
+docker compose exec backend python -m app.create_user pessoa@example.com --name "Pessoa"
+```
+
+Defina `ROCKSEG_SECRET_KEY` (valor longo e aleatório) fora do uso local.
+
 ### Dados de exemplo
 
-Cria um projeto com imagens sintéticas, anotações, dataset e um modelo já
+Cria (na conta `demo@example.com` por padrão, que precisa existir; use
+`--email`/`--password` para outra) um projeto com imagens sintéticas, anotações, dataset e um modelo já
 treinado (as imagens são geradas, não são seções delgadas reais):
 
 ```shell

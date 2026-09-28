@@ -61,7 +61,59 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   } catch (e) {
     throw new ApiError(0, NETWORK_MESSAGE, String(e));
   }
+  // A session that expired (or was revoked) mid-use: let the auth context
+  // drop back to the login screen. Auth endpoints report their own 401s.
+  if (res.status === 401 && !input.startsWith("/api/auth/")) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
   return asJson<T>(res);
+}
+
+// --- Auth + user area ---------------------------------------------------
+
+export const UNAUTHORIZED_EVENT = "rockseg:unauthorized";
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  created_at: string;
+}
+
+export interface MyProject extends ProjectSummary {
+  n_images: number;
+  n_annotated: number;
+  n_datasets: number;
+  n_models: number;
+}
+
+export interface MyModel extends ModelSummary {
+  project_id: string;
+  project_name: string;
+}
+
+export function getCurrentUser(): Promise<User> {
+  return request("/api/auth/me");
+}
+
+export function login(email: string, password: string): Promise<User> {
+  return request("/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function logout(): Promise<void> {
+  return request("/api/auth/logout", { method: "POST" });
+}
+
+export function listMyProjects(): Promise<MyProject[]> {
+  return request("/api/me/projects");
+}
+
+export function listMyModels(): Promise<MyModel[]> {
+  return request("/api/me/models");
 }
 
 export function listProjects(): Promise<ProjectSummary[]> {

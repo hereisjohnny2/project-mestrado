@@ -17,9 +17,10 @@ if str(LEGACY_ROCKNN_DIR) not in sys.path:
 
 
 @pytest.fixture
-def api_client(tmp_path, monkeypatch):
-    """A TestClient wired to a throwaway storage dir + SQLite file, isolated
-    per test (the app otherwise memoizes settings/engine as module globals)."""
+def app_factory(tmp_path, monkeypatch):
+    """Builds independent TestClients (each with its own cookie jar) against
+    one throwaway storage dir + SQLite file, isolated per test (the app
+    otherwise memoizes settings/engine as module globals)."""
     from fastapi.testclient import TestClient
 
     from app.core import config as config_module
@@ -33,9 +34,43 @@ def api_client(tmp_path, monkeypatch):
 
     from app.main import app
 
-    with TestClient(app) as client:
-        yield client
+    clients = []
 
+    def make() -> TestClient:
+        client = TestClient(app)
+        client.__enter__()
+        clients.append(client)
+        return client
+
+    yield make
+
+    for client in clients:
+        client.__exit__(None, None, None)
     config_module.get_settings.cache_clear()
     session_module._engine = None
     session_module._SessionLocal = None
+
+
+def register(client, email="ana@example.com", name="Ana", password="senha-forte-123"):
+    """Accounts are admin-created (no sign-up endpoint): create the user with
+    the same script an admin would use, then log the client in."""
+    from app.create_user import main as create_user
+
+    assert create_user([email, "--name", name, "--password", password]) == 0
+    resp = client.post("/auth/login", json={"email": email.strip().lower(), "password": password})
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+@pytest.fixture
+def anon_client(app_factory):
+    """No session cookie."""
+    return app_factory()
+
+
+@pytest.fixture
+def api_client(app_factory):
+    """Registered and logged in as a default user."""
+    client = app_factory()
+    register(client)
+    return client

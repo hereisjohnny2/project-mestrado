@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api.auth import router as auth_router
 from .api.datasets import router as datasets_router
 from .api.projects import router as projects_router
 from .api.segmentation import router as segmentation_router
@@ -21,6 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(datasets_router)
 app.include_router(training_router)

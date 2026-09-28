@@ -1,4 +1,8 @@
 import { Route, Routes } from "react-router-dom";
+import { RequireAuth } from "./components/AuthProvider";
+import AppLayout from "./components/AppLayout";
+import LoginPage from "./pages/LoginPage";
+import AccountPage from "./pages/AccountPage";
 import ProjectListPage from "./pages/ProjectListPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 import AnnotationPage from "./pages/AnnotationPage";
@@ -9,12 +13,19 @@ import SegmentationPage from "./pages/SegmentationPage";
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<ProjectListPage />} />
-      <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
-      <Route path="/projects/:projectId/training" element={<TrainingPage />} />
-      <Route path="/projects/:projectId/segmentation" element={<SegmentationPage />} />
-      <Route path="/projects/:projectId/compare" element={<ComparePage />} />
-      <Route path="/images/:imageId" element={<AnnotationPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<ProjectListPage />} />
+          <Route path="/account" element={<AccountPage />} />
+          <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
+          <Route path="/projects/:projectId/training" element={<TrainingPage />} />
+          <Route path="/projects/:projectId/segmentation" element={<SegmentationPage />} />
+          <Route path="/projects/:projectId/compare" element={<ComparePage />} />
+        </Route>
+        {/* full-screen editor keeps its own header */}
+        <Route path="/images/:imageId" element={<AnnotationPage />} />
+      </Route>
     </Routes>
   );
 }

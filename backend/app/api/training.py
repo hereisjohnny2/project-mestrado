@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..core.storage import ProjectStorage, get_settings
+from .deps import get_current_user, get_owned_dataset, get_owned_model, get_owned_project
 from ..db import models
 from ..db.session import get_db
 from ..ml.artifacts import load_state_dict_safely, save_imported_model, save_model
@@ -34,10 +35,10 @@ def _check_model_name(name: str) -> str:
 
 
 @router.post("/training/jobs", response_model=TrainingJobOut, status_code=201)
-def create_training_job(payload: TrainingJobCreate, db: Session = Depends(get_db)) -> dict:
-    dataset = db.get(models.Dataset, payload.dataset_id)
-    if dataset is None:
-        raise HTTPException(404, "dataset not found")
+def create_training_job(
+    payload: TrainingJobCreate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> dict:
+    dataset = get_owned_dataset(db, user, payload.dataset_id)
 
     config = TrainingConfig(
         epochs=payload.epochs,
@@ -46,22 +47,22 @@ def create_training_job(payload: TrainingJobCreate, db: Session = Depends(get_db
         split_ratio=payload.split_ratio,
         seed=payload.seed,
     )
-    job = start_job(dataset.id, str(dataset_absolute_path(dataset)), config)
+    job = start_job(user.id, dataset.id, str(dataset_absolute_path(dataset)), config)
     return job.snapshot()
 
 
 @router.get("/training/jobs/{job_id}", response_model=TrainingJobOut)
-def get_training_job(job_id: str) -> dict:
+def get_training_job(job_id: str, user: models.User = Depends(get_current_user)) -> dict:
     job = get_job(job_id)
-    if job is None:
+    if job is None or job.owner_id != user.id:
         raise HTTPException(404, "training job not found")
     return job.snapshot()
 
 
 @router.get("/training/jobs/{job_id}/stream")
-def stream_training_job(job_id: str) -> StreamingResponse:
+def stream_training_job(job_id: str, user: models.User = Depends(get_current_user)) -> StreamingResponse:
     job = get_job(job_id)
-    if job is None:
+    if job is None or job.owner_id != user.id:
         raise HTTPException(404, "training job not found")
 
     def events():
@@ -81,16 +82,19 @@ def stream_training_job(job_id: str) -> StreamingResponse:
 
 
 @router.post("/training/jobs/{job_id}/publish", response_model=ModelOut, status_code=201)
-def publish_model(job_id: str, payload: PublishModelRequest, db: Session = Depends(get_db)) -> models.MLModel:
+def publish_model(
+    job_id: str,
+    payload: PublishModelRequest,
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> models.MLModel:
     job = get_job(job_id)
-    if job is None:
+    if job is None or job.owner_id != user.id:
         raise HTTPException(404, "training job not found")
     if job.status != "done" or job.result is None:
         raise HTTPException(409, "training job has not finished successfully")
 
-    dataset = db.get(models.Dataset, job.dataset_id)
-    if dataset is None:
-        raise HTTPException(404, "dataset not found")
+    dataset = get_owned_dataset(db, user, job.dataset_id)
 
     payload.name = _check_model_name(payload.name)
     storage = ProjectStorage(dataset.project_id)
@@ -139,16 +143,14 @@ def import_legacy_model(
     file: UploadFile,
     name: str = Form(...),
     dataset_id: str = Form(...),
-    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user), db: Session = Depends(get_db),
 ) -> models.MLModel:
     """Imports a ``state_dict`` ``.pt`` saved by the legacy CLI. The legacy
     format carries no metrics, so the model is evaluated on ``dataset_id``
     (typically the imported ``.dat`` it was trained from)."""
-    project = db.get(models.Project, project_id)
-    if project is None:
-        raise HTTPException(404, "project not found")
-    dataset = db.get(models.Dataset, dataset_id)
-    if dataset is None or dataset.project_id != project_id:
+    project = get_owned_project(db, user, project_id)
+    dataset = get_owned_dataset(db, user, dataset_id)
+    if dataset.project_id != project_id:
         raise HTTPException(404, "dataset not found in this project")
     name = _check_model_name(name)
 
@@ -195,10 +197,10 @@ def import_legacy_model(
 
 
 @router.get("/projects/{project_id}/models", response_model=list[ModelOut])
-def list_models(project_id: str, db: Session = Depends(get_db)) -> list[models.MLModel]:
-    project = db.get(models.Project, project_id)
-    if project is None:
-        raise HTTPException(404, "project not found")
+def list_models(
+    project_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[models.MLModel]:
+    get_owned_project(db, user, project_id)
     return (
         db.query(models.MLModel)
         .join(models.Dataset)
@@ -209,10 +211,10 @@ def list_models(project_id: str, db: Session = Depends(get_db)) -> list[models.M
 
 
 @router.get("/models/{model_id}/download")
-def download_model(model_id: str, fmt: str = "pt", db: Session = Depends(get_db)) -> FileResponse:
-    model = db.get(models.MLModel, model_id)
-    if model is None:
-        raise HTTPException(404, "model not found")
+def download_model(
+    model_id: str, fmt: str = "pt", user: models.User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> FileResponse:
+    model = get_owned_model(db, user, model_id)
 
     storage_dir = get_settings().storage_dir
     if fmt == "pt":
