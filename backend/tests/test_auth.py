@@ -188,3 +188,15 @@ def test_segmentation_and_imports_are_private(app_factory):
     )
     assert resp.status_code == 404
     assert ana.get(f"/segmentation/runs/{run['id']}/export").status_code == 200
+
+
+def test_create_user_script(api_client, capsys):
+    from app.create_user import main
+
+    assert main(["novo@example.com", "--name", "Novo", "--password", "senha-forte-123"]) == 0
+    assert main(["novo@example.com", "--password", "senha-forte-123"]) == 1  # duplicate
+    assert main(["ruim", "--password", "senha-forte-123"]) == 1  # invalid email
+    assert main(["b@example.com", "--password", "curta"]) == 1  # short password
+    api_client.post("/auth/logout")
+    resp = api_client.post("/auth/login", json={"email": "novo@example.com", "password": "senha-forte-123"})
+    assert resp.status_code == 200 and resp.json()["name"] == "Novo"
