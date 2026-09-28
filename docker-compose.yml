@@ -1,5 +1,5 @@
-# Fase 0: sobe backend (FastAPI) + frontend (placeholder) para provar que a
-# base está de pé. Plano §4.1 / §9 (deploy: docker compose local, CPU).
+# Desenvolvimento: backend com o código montado por bind-mount + frontend.
+# Para produção local, ver docker-compose.prod.yml.
 services:
   backend:
     build: ./backend
