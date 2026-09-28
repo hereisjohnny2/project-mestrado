@@ -2,9 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "backend",
+      "runtimeExecutable": "/home/joao/.local/bin/uvicorn",
+      "runtimeArgs": ["app.main:app", "--app-dir", "backend", "--port", "8000"],
+      "port": 8000
+    },
+    {
       "name": "frontend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "runtimeExecutable": "/usr/bin/node",
+      "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "--host"],
       "port": 5173
     }
   ]
