@@ -242,6 +242,12 @@ export default function ProjectDetailPage() {
           >
             Renomear <Kbd>R</Kbd>
           </button>
+          <Link
+            to={`/projects/${project.id}/training`}
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+          >
+            Dataset e treino
+          </Link>
           <button
             onClick={onDeleteProject}
             className="rounded-lg border border-red-900 px-3 py-1.5 text-sm text-red-400 hover:bg-red-950"

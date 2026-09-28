@@ -132,3 +132,108 @@ export function saveMask(imageId: string, blob: Blob): Promise<ImageSummary> {
 export function clearMask(imageId: string): Promise<ImageSummary> {
   return request(imageMaskUrl(imageId), { method: "DELETE" });
 }
+
+// --- Fase 2: dataset + training ---------------------------------------
+
+export interface DatasetSummary {
+  id: string;
+  project_id: string;
+  n_pixels: number;
+  n_pore: number;
+  n_solid: number;
+  sha256: string;
+  created_at: string;
+}
+
+export interface DatasetHistogram {
+  bin_edges: number[];
+  pore: { r: number[]; g: number[]; b: number[] };
+  solid: { r: number[]; g: number[]; b: number[] };
+}
+
+export interface TrainingMetrics {
+  accuracy: number;
+  loss_curve: number[];
+  confusion_matrix: number[][];
+  per_class: Record<string, { precision: number; recall: number; f1: number; iou: number }>;
+  duration_ms: number;
+}
+
+export interface TrainingJob {
+  id: string;
+  dataset_id: string;
+  status: "pending" | "running" | "done" | "failed";
+  epoch: number;
+  epochs: number;
+  loss_curve: number[];
+  error: string | null;
+  model_id: string | null;
+  metrics: TrainingMetrics | null;
+}
+
+export interface TrainingJobParams {
+  dataset_id: string;
+  epochs?: number;
+  learning_rate?: number;
+  batch_size?: number;
+  split_ratio?: number;
+  seed?: number | null;
+}
+
+export interface ModelSummary {
+  id: string;
+  dataset_id: string;
+  name: string;
+  version: number;
+  metrics: TrainingMetrics;
+  config: Record<string, unknown>;
+  created_at: string;
+}
+
+export function listDatasets(projectId: string): Promise<DatasetSummary[]> {
+  return request(`/api/projects/${projectId}/datasets`);
+}
+
+export function generateDataset(projectId: string): Promise<DatasetSummary> {
+  return request(`/api/projects/${projectId}/datasets`, { method: "POST" });
+}
+
+export function getDatasetHistogram(datasetId: string): Promise<DatasetHistogram> {
+  return request(`/api/datasets/${datasetId}/histogram`);
+}
+
+export function datasetDownloadUrl(datasetId: string): string {
+  return `/api/datasets/${datasetId}/download`;
+}
+
+export function startTrainingJob(params: TrainingJobParams): Promise<TrainingJob> {
+  return request("/api/training/jobs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(params),
+  });
+}
+
+export function getTrainingJob(jobId: string): Promise<TrainingJob> {
+  return request(`/api/training/jobs/${jobId}`);
+}
+
+export function trainingJobStreamUrl(jobId: string): string {
+  return `/api/training/jobs/${jobId}/stream`;
+}
+
+export function publishModel(jobId: string, name: string): Promise<ModelSummary> {
+  return request(`/api/training/jobs/${jobId}/publish`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function listModels(projectId: string): Promise<ModelSummary[]> {
+  return request(`/api/projects/${projectId}/models`);
+}
+
+export function modelDownloadUrl(modelId: string, fmt: "pt" | "json" | "scripted" = "pt"): string {
+  return `/api/models/${modelId}/download?fmt=${fmt}`;
+}

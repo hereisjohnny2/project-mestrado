@@ -80,3 +80,36 @@ def dataset_stats(data: str | Path, pore_label: str = "Poro") -> dict:
         "n_solid": n_total - n_pore,
         "pore_ratio": (n_pore / n_total) if n_total else 0.0,
     }
+
+
+def dataset_histogram(data: str | Path, bins: int = 32, pore_label: str = "Poro") -> dict:
+    """Per-channel, per-class RGB histogram (plan §5.2: shows whether the
+    two classes are separable in color space, i.e. what the MLP actually
+    sees). 0-255 range, fixed bin count regardless of dataset size."""
+    import numpy as np
+
+    content = load_data_from_file(data, pore_label)
+    arr = np.array(content, dtype=np.int64)
+    edges = np.linspace(0, 255, bins + 1)
+
+    def channel_hist(mask: np.ndarray, channel: int) -> list[int]:
+        values = arr[mask, channel]
+        counts, _ = np.histogram(values, bins=edges)
+        return counts.tolist()
+
+    is_pore = arr[:, 3] == 1
+    is_solid = ~is_pore
+
+    return {
+        "bin_edges": edges.tolist(),
+        "pore": {
+            "r": channel_hist(is_pore, 0),
+            "g": channel_hist(is_pore, 1),
+            "b": channel_hist(is_pore, 2),
+        },
+        "solid": {
+            "r": channel_hist(is_solid, 0),
+            "g": channel_hist(is_solid, 1),
+            "b": channel_hist(is_solid, 2),
+        },
+    }
