@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..core.config import get_settings
@@ -29,7 +29,13 @@ def get_session_factory():
 
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    # create_all never alters existing tables: add the ownership column to
+    # databases created before auth existed.
+    if "owner_id" not in {c["name"] for c in inspect(engine).get_columns("projects")}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE projects ADD COLUMN owner_id VARCHAR REFERENCES users(id)"))
 
 
 def get_db() -> Iterator[Session]:

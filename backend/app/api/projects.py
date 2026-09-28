@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..core.storage import ProjectStorage, get_settings
 from ..db import models
 from ..db.session import get_db
+from .deps import get_current_user, get_owned_image, get_owned_project
 from ..schemas import ImageOut, ProjectCreate, ProjectDetailOut, ProjectOut, ProjectUpdate
 from ..services.images import UnsupportedImageError, ingest_image, mask_relative_path
 
@@ -32,8 +33,10 @@ def _image_out(image: models.Image) -> ImageOut:
 
 
 @router.post("/projects", response_model=ProjectOut, status_code=201)
-def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> models.Project:
-    project = models.Project(name=payload.name)
+def create_project(
+    payload: ProjectCreate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> models.Project:
+    project = models.Project(name=payload.name, owner_id=user.id)
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -41,15 +44,13 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> mod
 
 
 @router.get("/projects", response_model=list[ProjectOut])
-def list_projects(db: Session = Depends(get_db)) -> list[models.Project]:
-    return db.query(models.Project).order_by(models.Project.created_at.desc()).all()
+def list_projects(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[models.Project]:
+    return db.query(models.Project).filter(models.Project.owner_id == user.id).order_by(models.Project.created_at.desc()).all()
 
 
 @router.get("/projects/{project_id}", response_model=ProjectDetailOut)
-def get_project(project_id: str, db: Session = Depends(get_db)) -> ProjectDetailOut:
-    project = db.get(models.Project, project_id)
-    if project is None:
-        raise HTTPException(404, "project not found")
+def get_project(project_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> ProjectDetailOut:
+    project = get_owned_project(db, user, project_id)
     return ProjectDetailOut(
         id=project.id,
         name=project.name,
@@ -59,10 +60,8 @@ def get_project(project_id: str, db: Session = Depends(get_db)) -> ProjectDetail
 
 
 @router.patch("/projects/{project_id}", response_model=ProjectOut)
-def rename_project(project_id: str, payload: ProjectUpdate, db: Session = Depends(get_db)) -> models.Project:
-    project = db.get(models.Project, project_id)
-    if project is None:
-        raise HTTPException(404, "project not found")
+def rename_project(project_id: str, payload: ProjectUpdate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> models.Project:
+    project = get_owned_project(db, user, project_id)
     project.name = payload.name
     db.commit()
     db.refresh(project)
@@ -70,10 +69,8 @@ def rename_project(project_id: str, payload: ProjectUpdate, db: Session = Depend
 
 
 @router.delete("/projects/{project_id}", status_code=204, response_model=None)
-def delete_project(project_id: str, db: Session = Depends(get_db)) -> None:
-    project = db.get(models.Project, project_id)
-    if project is None:
-        raise HTTPException(404, "project not found")
+def delete_project(project_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> None:
+    project = get_owned_project(db, user, project_id)
     db.delete(project)
     db.commit()
     shutil.rmtree(get_settings().storage_dir / project_id, ignore_errors=True)
@@ -81,11 +78,9 @@ def delete_project(project_id: str, db: Session = Depends(get_db)) -> None:
 
 @router.post("/projects/{project_id}/images", response_model=list[ImageOut], status_code=201)
 async def upload_images(
-    project_id: str, files: list[UploadFile], db: Session = Depends(get_db)
+    project_id: str, files: list[UploadFile], user: models.User = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> list[ImageOut]:
-    project = db.get(models.Project, project_id)
-    if project is None:
-        raise HTTPException(404, "project not found")
+    project = get_owned_project(db, user, project_id)
 
     storage = ProjectStorage(project.id)
     created: list[models.Image] = []
@@ -114,18 +109,14 @@ async def upload_images(
 
 
 @router.get("/images/{image_id}", response_model=ImageOut)
-def get_image(image_id: str, db: Session = Depends(get_db)) -> ImageOut:
-    image = db.get(models.Image, image_id)
-    if image is None:
-        raise HTTPException(404, "image not found")
+def get_image(image_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> ImageOut:
+    image = get_owned_image(db, user, image_id)
     return _image_out(image)
 
 
 @router.delete("/images/{image_id}", status_code=204, response_model=None)
-def delete_image(image_id: str, db: Session = Depends(get_db)) -> None:
-    image = db.get(models.Image, image_id)
-    if image is None:
-        raise HTTPException(404, "image not found")
+def delete_image(image_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> None:
+    image = get_owned_image(db, user, image_id)
     storage_dir = get_settings().storage_dir
     (storage_dir / image.path).unlink(missing_ok=True)
     if image.annotation is not None:
@@ -135,10 +126,8 @@ def delete_image(image_id: str, db: Session = Depends(get_db)) -> None:
 
 
 @router.get("/images/{image_id}/file")
-def get_image_file(image_id: str, db: Session = Depends(get_db)) -> FileResponse:
-    image = db.get(models.Image, image_id)
-    if image is None:
-        raise HTTPException(404, "image not found")
+def get_image_file(image_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> FileResponse:
+    image = get_owned_image(db, user, image_id)
     path = get_settings().storage_dir / image.path
     if not path.exists():
         raise HTTPException(404, "image file missing on disk")
@@ -146,10 +135,8 @@ def get_image_file(image_id: str, db: Session = Depends(get_db)) -> FileResponse
 
 
 @router.get("/images/{image_id}/mask")
-def get_image_mask(image_id: str, db: Session = Depends(get_db)) -> FileResponse:
-    image = db.get(models.Image, image_id)
-    if image is None:
-        raise HTTPException(404, "image not found")
+def get_image_mask(image_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> FileResponse:
+    image = get_owned_image(db, user, image_id)
     if image.annotation is None:
         raise HTTPException(404, "no annotation yet")
     path = get_settings().storage_dir / image.annotation.mask_path
@@ -159,10 +146,9 @@ def get_image_mask(image_id: str, db: Session = Depends(get_db)) -> FileResponse
 
 
 @router.put("/images/{image_id}/mask", response_model=ImageOut)
-async def put_image_mask(image_id: str, request: Request, db: Session = Depends(get_db)) -> ImageOut:
-    image = db.get(models.Image, image_id)
-    if image is None:
-        raise HTTPException(404, "image not found")
+async def put_image_mask(
+    image_id: str, request: Request, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> ImageOut:
+    image = get_owned_image(db, user, image_id)
 
     raw = await request.body()
     if not raw:
@@ -185,10 +171,8 @@ async def put_image_mask(image_id: str, request: Request, db: Session = Depends(
 
 
 @router.delete("/images/{image_id}/mask", response_model=ImageOut)
-def clear_image_mask(image_id: str, db: Session = Depends(get_db)) -> ImageOut:
-    image = db.get(models.Image, image_id)
-    if image is None:
-        raise HTTPException(404, "image not found")
+def clear_image_mask(image_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> ImageOut:
+    image = get_owned_image(db, user, image_id)
     if image.annotation is not None:
         path = get_settings().storage_dir / image.annotation.mask_path
         path.unlink(missing_ok=True)

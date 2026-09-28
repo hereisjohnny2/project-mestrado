@@ -11,6 +11,8 @@ services:
     environment:
       - ROCKSEG_STORAGE_DIR=/app/storage
       - ROCKSEG_CORS_ORIGINS=["http://localhost:5173"]
+      # Override with a long random value for anything beyond local use.
+      - ROCKSEG_SECRET_KEY=${ROCKSEG_SECRET_KEY:-dev-insecure-secret-change-me}
 
   frontend:
     build: ./frontend

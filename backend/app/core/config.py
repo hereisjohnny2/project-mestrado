@@ -24,6 +24,13 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    # Signs the session JWT. The default is for local dev only — set
+    # ROCKSEG_SECRET_KEY to a long random value in any shared deployment.
+    secret_key: str = "dev-insecure-secret-change-me"
+    token_ttl_minutes: int = 60 * 24 * 7
+    # Set true when served over HTTPS so the session cookie is Secure.
+    cookie_secure: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

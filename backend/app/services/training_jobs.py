@@ -1,7 +1,7 @@
 """In-process training job registry.
 
-The app is single-user, single-process (plan §9: monousuário, `docker
-compose up` local). A training run is CPU-bound and takes seconds to a few
+The app is single-process (plan §9: `docker compose up` local); jobs are
+owned by the user who started them. A training run is CPU-bound and takes seconds to a few
 minutes for the dataset sizes in scope, so a plain background thread plus an
 in-memory job table is enough — no task queue, no persistence across
 restarts. Progress is polled by the SSE endpoint every ``POLL_INTERVAL``.
@@ -22,6 +22,7 @@ POLL_INTERVAL = 0.25
 @dataclass
 class JobState:
     id: str
+    owner_id: str
     dataset_id: str
     dataset_path: str
     config: TrainingConfig
@@ -64,8 +65,8 @@ def _metrics(result: TrainingResult | None) -> dict | None:
 JOBS: dict[str, JobState] = {}
 
 
-def start_job(dataset_id: str, dataset_path: str, config: TrainingConfig) -> JobState:
-    job = JobState(id=str(uuid.uuid4()), dataset_id=dataset_id, dataset_path=dataset_path, config=config, epochs=config.epochs)
+def start_job(owner_id: str, dataset_id: str, dataset_path: str, config: TrainingConfig) -> JobState:
+    job = JobState(id=str(uuid.uuid4()), owner_id=owner_id, dataset_id=dataset_id, dataset_path=dataset_path, config=config, epochs=config.epochs)
     JOBS[job.id] = job
 
     def on_epoch_end(epoch_index: int, epochs: int, loss_value: float | None) -> None:
