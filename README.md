@@ -34,12 +34,47 @@ CLI original — ver plano §3.3.
 
 ## Rodando com Docker
 
+Desenvolvimento (código do backend montado por bind-mount):
+
 ```shell
 docker compose up --build
 ```
 
 - Backend (FastAPI): http://localhost:8000 — `/health` para checar o status.
 - Frontend: http://localhost:5173
+
+Produção local (reinício automático, só o frontend exposto, porta em
+`ROCKSEG_PORT`, padrão 8080; dados no volume `storage`):
+
+```shell
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+### Dados de exemplo
+
+Cria um projeto com imagens sintéticas, anotações, dataset e um modelo já
+treinado (as imagens são geradas, não são seções delgadas reais):
+
+```shell
+docker compose exec backend python -m app.seed
+docker compose -f docker-compose.prod.yml exec backend python -m app.seed
+# ou, com o backend local rodando: cd backend && python -m app.seed
+```
+
+## Migrando o que já existe do mestrado
+
+Na tela **Dataset e treino** de um projeto:
+
+- **Importar .dat** — arquivo `R<TAB>G<TAB>B<TAB>Rótulo` gerado pelo app Qt (`Poro`
+  vira poro; qualquer outro rótulo, sólido). Linhas malformadas são rejeitadas
+  com o número da linha.
+- **Importar .pt** — `state_dict` salvo pelo `trainer.py` legado. O modelo é
+  avaliado no dataset selecionado (o formato antigo não guarda métricas e o
+  split original é desconhecido, então os números incluem pixels de treino)
+  e ganha `.json` e export TorchScript como qualquer outro. Modelos já
+  TorchScript (`-scripted.pt`) não são aceitos.
+- **Comparar modelos** — métricas, curvas de perda e porosidade/máscaras de duas
+  segmentações lado a lado.
 
 ## Desenvolvimento local
 
@@ -79,7 +114,7 @@ npm run dev
 
 ## Estado atual
 
-Fase 0 do plano: fundação do backend, porte do núcleo de ML com teste de
-paridade, e esqueleto do frontend. As telas de anotação, treino e
-segmentação ainda não existem — ver `docs/PLANO-WEB.md` para as próximas
-fases.
+Fases 0–4 do plano concluídas: núcleo de ML com teste de paridade, anotação,
+dataset e treino, segmentação em lote, importação de artefatos legados,
+comparação de modelos, export TorchScript, compose de produção e seed. Ver
+`docs/PLANO-WEB.md` (§7 lista melhorias deixadas para depois).

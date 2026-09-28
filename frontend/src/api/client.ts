@@ -198,6 +198,20 @@ export function generateDataset(projectId: string): Promise<DatasetSummary> {
   return request(`/api/projects/${projectId}/datasets`, { method: "POST" });
 }
 
+export function importDataset(projectId: string, file: File): Promise<DatasetSummary> {
+  const form = new FormData();
+  form.append("file", file);
+  return request(`/api/projects/${projectId}/datasets/import`, { method: "POST", body: form });
+}
+
+export function importModel(projectId: string, file: File, name: string, datasetId: string): Promise<ModelSummary> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("name", name);
+  form.append("dataset_id", datasetId);
+  return request(`/api/projects/${projectId}/models/import`, { method: "POST", body: form });
+}
+
 export function getDatasetHistogram(datasetId: string): Promise<DatasetHistogram> {
   return request(`/api/datasets/${datasetId}/histogram`);
 }

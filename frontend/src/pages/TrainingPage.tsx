@@ -7,6 +7,8 @@ import {
   TrainingJob,
   datasetDownloadUrl,
   generateDataset,
+  importDataset,
+  importModel,
   getDatasetHistogram,
   getTrainingJob,
   listDatasets,
@@ -169,6 +171,37 @@ export default function TrainingPage() {
     }
   };
 
+  const datasetFileRef = useRef<HTMLInputElement>(null);
+  const modelFileRef = useRef<HTMLInputElement>(null);
+
+  const onImportDataset = async (file: File | undefined) => {
+    if (!projectId || !file) return;
+    try {
+      const dataset = await importDataset(projectId, file);
+      showSuccess("Dataset .dat importado.");
+      setDatasets((prev) => [dataset, ...prev]);
+      setSelectedDatasetId(dataset.id);
+    } catch (e) {
+      showError(e, "Não foi possível importar o .dat.");
+    } finally {
+      if (datasetFileRef.current) datasetFileRef.current.value = "";
+    }
+  };
+
+  const onImportModel = async (file: File | undefined) => {
+    if (!projectId || !file || !selectedDatasetId) return;
+    try {
+      const name = file.name.replace(/\.pt$/i, "");
+      await importModel(projectId, file, name, selectedDatasetId);
+      showSuccess("Modelo importado e avaliado no dataset selecionado.");
+      refreshModels();
+    } catch (e) {
+      showError(e, "Não foi possível importar o modelo.");
+    } finally {
+      if (modelFileRef.current) modelFileRef.current.value = "";
+    }
+  };
+
   const jobStorageKey = `training-job:${projectId}`;
 
   const rememberJob = (id: string | null) => {
@@ -270,13 +303,25 @@ export default function TrainingPage() {
       <section className="mt-8 rounded-lg border border-zinc-800 p-5">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-medium text-zinc-100">Dataset</h2>
-          <button
-            onClick={onGenerateDataset}
-            disabled={generating}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-          >
-            {generating ? "Gerando..." : "Gerar dataset das anotações"}
-          </button>
+          <div className="flex gap-2">
+            <label className="cursor-pointer rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800">
+              Importar .dat
+              <input
+                ref={datasetFileRef}
+                type="file"
+                accept=".dat,text/plain"
+                hidden
+                onChange={(e) => onImportDataset(e.target.files?.[0])}
+              />
+            </label>
+            <button
+              onClick={onGenerateDataset}
+              disabled={generating}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            >
+              {generating ? "Gerando..." : "Gerar dataset das anotações"}
+            </button>
+          </div>
         </div>
 
         {datasets.length === 0 && (
@@ -485,7 +530,35 @@ export default function TrainingPage() {
 
       {/* Published models */}
       <section className="mt-8 rounded-lg border border-zinc-800 p-5">
-        <h2 className="text-lg font-medium text-zinc-100">Modelos publicados</h2>
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="text-lg font-medium text-zinc-100">Modelos publicados</h2>
+          <div className="flex gap-2">
+            {models.length >= 2 && (
+              <Link
+                to={`/projects/${projectId}/compare`}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
+              >
+                Comparar modelos
+              </Link>
+            )}
+            <label
+              title={selectedDatasetId ? "Avaliado no dataset selecionado acima" : "Selecione ou importe um dataset primeiro"}
+              className={`rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 ${
+                selectedDatasetId ? "cursor-pointer hover:bg-zinc-800" : "cursor-not-allowed opacity-40"
+              }`}
+            >
+              Importar .pt
+              <input
+                ref={modelFileRef}
+                type="file"
+                accept=".pt"
+                hidden
+                disabled={!selectedDatasetId}
+                onChange={(e) => onImportModel(e.target.files?.[0])}
+              />
+            </label>
+          </div>
+        </div>
         {models.length === 0 && <p className="mt-4 text-sm text-zinc-400">Nenhum modelo publicado ainda.</p>}
         <div className="mt-4 space-y-2">
           {models.map((m) => (
@@ -493,6 +566,9 @@ export default function TrainingPage() {
               <div>
                 <p className="text-sm font-medium text-zinc-100">
                   {m.name} <span className="text-zinc-500">v{m.version}</span>
+                  {m.config.imported === true && (
+                    <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">importado</span>
+                  )}
                 </p>
                 <p className="text-xs text-zinc-400">
                   acurácia {(m.metrics.accuracy * 100).toFixed(1)}% — {new Date(m.created_at).toLocaleString()}
