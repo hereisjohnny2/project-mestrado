@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,13 @@ from ..db import models
 from ..db.session import get_db
 from ..ml.dataset import dataset_histogram, dataset_stats
 from ..schemas import DatasetHistogramOut, DatasetOut
-from ..services.dataset import EmptyDatasetError, dataset_absolute_path, generate_dataset
+from ..services.dataset import (
+    EmptyDatasetError,
+    InvalidDatasetError,
+    dataset_absolute_path,
+    generate_dataset,
+    import_dataset,
+)
 
 router = APIRouter()
 
@@ -36,6 +42,25 @@ def create_dataset(project_id: str, user: models.User = Depends(get_current_user
         n_solid=fields["n_solid"],
         sha256=fields["sha256"],
     )
+    db.add(dataset)
+    db.commit()
+    db.refresh(dataset)
+    return dataset
+
+
+@router.post("/projects/{project_id}/datasets/import", response_model=DatasetOut, status_code=201)
+def import_legacy_dataset(
+    project_id: str, file: UploadFile, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> models.Dataset:
+    """Imports a ``.dat`` produced by the legacy Qt annotation app."""
+    project = get_owned_project(db, user, project_id)
+
+    try:
+        fields = import_dataset(file.file, ProjectStorage(project.id))
+    except InvalidDatasetError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    dataset = models.Dataset(project_id=project.id, **fields)
     db.add(dataset)
     db.commit()
     db.refresh(dataset)

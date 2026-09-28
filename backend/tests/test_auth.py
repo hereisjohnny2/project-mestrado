@@ -146,3 +146,45 @@ def test_training_job_and_model_are_private(app_factory):
     assert bia.get(f"/models/{model['id']}/download").status_code == 404
     assert bia.get(f"/datasets/{dataset['id']}/download").status_code == 404
     assert ana.get(f"/models/{model['id']}/download").status_code == 200
+
+
+def test_segmentation_and_imports_are_private(app_factory):
+    from .test_dataset_and_training import _make_annotated_project
+    from .test_import import DAT, _import_dat
+    from .test_segmentation import _noise_image_bytes, _publish_model, _wait
+
+    ana, bia = app_factory(), app_factory()
+    register(ana)
+    register(bia, email="bia@example.com", name="Bia")
+
+    project, image = _make_annotated_project(ana)
+    model = _publish_model(ana, project)
+    run = ana.post("/segmentation/runs", json={"model_id": model["id"], "image_ids": [image["id"]]}).json()
+    _wait(ana, f"/segmentation/runs/{run['id']}")
+    [result] = ana.get(f"/segmentation/runs/{run['id']}/results").json()
+
+    # bia can't start runs on ana's model/images, nor read or delete ana's runs
+    assert bia.post("/segmentation/runs", json={"model_id": model["id"], "image_ids": [image["id"]]}).status_code == 404
+    bia_project = bia.post("/projects", json={"name": "b"}).json()
+    assert bia.post("/segmentation/runs", json={"model_id": "x", "image_ids": [image["id"]]}).status_code == 404
+    for resp in [
+        bia.get(f"/projects/{project['id']}/runs"),
+        bia.get(f"/segmentation/runs/{run['id']}"),
+        bia.get(f"/segmentation/runs/{run['id']}/stream"),
+        bia.get(f"/segmentation/runs/{run['id']}/results"),
+        bia.get(f"/segmentation/runs/{run['id']}/export"),
+        bia.delete(f"/segmentation/runs/{run['id']}"),
+        bia.get(f"/segmentation/results/{result['id']}/bin"),
+        bia.get(f"/segmentation/results/{result['id']}/overlay"),
+        _import_dat(bia, project),
+    ]:
+        assert resp.status_code == 404, resp.request.url
+    # importing into her own project with ana's dataset is also refused
+    dataset = ana.get(f"/projects/{project['id']}/datasets").json()[0]
+    resp = bia.post(
+        f"/projects/{bia_project['id']}/models/import",
+        data={"name": "n", "dataset_id": dataset["id"]},
+        files={"file": ("m.pt", b"x")},
+    )
+    assert resp.status_code == 404
+    assert ana.get(f"/segmentation/runs/{run['id']}/export").status_code == 200

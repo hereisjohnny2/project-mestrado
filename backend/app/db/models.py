@@ -76,6 +76,7 @@ class Image(Base):
 
     project: Mapped[Project] = relationship(back_populates="images")
     annotation: Mapped["Annotation | None"] = relationship(back_populates="image", uselist=False, cascade="all, delete-orphan")
+    results: Mapped[list["Result"]] = relationship(back_populates="image", cascade="all, delete-orphan")
 
 
 class Annotation(Base):
@@ -130,6 +131,7 @@ class Run(Base):
     status: Mapped[RunStatus] = mapped_column(Enum(RunStatus), default=RunStatus.PENDING)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
 
     model: Mapped[MLModel] = relationship(back_populates="runs")
     results: Mapped[list["Result"]] = relationship(back_populates="run", cascade="all, delete-orphan")
@@ -147,3 +149,4 @@ class Result(Base):
     overlay_path: Mapped[str] = mapped_column(String, nullable=False)
 
     run: Mapped[Run] = relationship(back_populates="results")
+    image: Mapped[Image] = relationship(back_populates="results")

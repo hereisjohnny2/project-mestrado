@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.auth import router as auth_router
 from .api.datasets import router as datasets_router
 from .api.projects import router as projects_router
+from .api.segmentation import router as segmentation_router
 from .api.training import router as training_router
 from .core.config import get_settings
 from .db.session import init_db
@@ -25,6 +26,7 @@ app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(datasets_router)
 app.include_router(training_router)
+app.include_router(segmentation_router)
 
 
 @app.on_event("startup")

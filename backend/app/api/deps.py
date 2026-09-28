@@ -53,3 +53,17 @@ def get_owned_model(db: Session, user: models.User, model_id: str) -> models.MLM
     if model is None or model.dataset.project.owner_id != user.id:
         raise HTTPException(404, "model not found")
     return model
+
+
+def get_owned_run(db: Session, user: models.User, run_id: str) -> models.Run:
+    run = db.get(models.Run, run_id)
+    if run is None or run.model.dataset.project.owner_id != user.id:
+        raise HTTPException(404, "run not found")
+    return run
+
+
+def get_owned_result(db: Session, user: models.User, result_id: str) -> models.Result:
+    result = db.get(models.Result, result_id)
+    if result is None or result.run.model.dataset.project.owner_id != user.id:
+        raise HTTPException(404, "result not found")
+    return result

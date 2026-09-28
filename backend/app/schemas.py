@@ -145,6 +145,33 @@ class ModelOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SegmentationRunCreate(BaseModel):
+    model_id: str
+    image_ids: list[str]
+
+
+class SegmentationRunOut(BaseModel):
+    model_config = {"protected_namespaces": (), "from_attributes": True}
+
+    id: str
+    model_id: str
+    status: str
+    total: int
+    done: int
+    error: str | None
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class SegmentationResultOut(BaseModel):
+    id: str
+    run_id: str
+    image_id: str
+    filename: str
+    porosity: float
+    time_ms: float
+
+
 class MyProjectOut(ProjectOut):
     n_images: int
     n_annotated: int

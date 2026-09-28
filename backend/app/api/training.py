@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -13,13 +15,23 @@ from ..core.storage import ProjectStorage, get_settings
 from .deps import get_current_user, get_owned_dataset, get_owned_model, get_owned_project
 from ..db import models
 from ..db.session import get_db
-from ..ml.artifacts import save_model
-from ..ml.training import TrainingConfig
+from ..ml.artifacts import load_state_dict_safely, save_imported_model, save_model
+from ..ml.training import TrainingConfig, evaluate_model
 from ..schemas import ModelOut, PublishModelRequest, TrainingJobCreate, TrainingJobOut
 from ..services.dataset import dataset_absolute_path
 from ..services.training_jobs import get_job, start_job, wait_for_update
 
 router = APIRouter()
+
+
+def _check_model_name(name: str) -> str:
+    """Model names become file names on disk, so they must not be paths."""
+    name = name.strip()
+    if not name:
+        raise HTTPException(422, "name must not be empty")
+    if "/" in name or "\\" in name or name.startswith("."):
+        raise HTTPException(422, "name must not contain slashes or start with a dot")
+    return name
 
 
 @router.post("/training/jobs", response_model=TrainingJobOut, status_code=201)
@@ -84,6 +96,7 @@ def publish_model(
 
     dataset = get_owned_dataset(db, user, job.dataset_id)
 
+    payload.name = _check_model_name(payload.name)
     storage = ProjectStorage(dataset.project_id)
     version = (
         db.query(models.MLModel)
@@ -121,6 +134,65 @@ def publish_model(
     db.commit()
     db.refresh(model)
     job.model_id = model.id
+    return model
+
+
+@router.post("/projects/{project_id}/models/import", response_model=ModelOut, status_code=201)
+def import_legacy_model(
+    project_id: str,
+    file: UploadFile,
+    name: str = Form(...),
+    dataset_id: str = Form(...),
+    user: models.User = Depends(get_current_user), db: Session = Depends(get_db),
+) -> models.MLModel:
+    """Imports a ``state_dict`` ``.pt`` saved by the legacy CLI. The legacy
+    format carries no metrics, so the model is evaluated on ``dataset_id``
+    (typically the imported ``.dat`` it was trained from)."""
+    project = get_owned_project(db, user, project_id)
+    dataset = get_owned_dataset(db, user, dataset_id)
+    if dataset.project_id != project_id:
+        raise HTTPException(404, "dataset not found in this project")
+    name = _check_model_name(name)
+
+    storage = ProjectStorage(project_id)
+    with tempfile.NamedTemporaryFile(dir=storage.models, suffix=".upload", delete=True) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp.flush()
+        try:
+            net = load_state_dict_safely(tmp.name)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    version = (
+        db.query(models.MLModel)
+        .join(models.Dataset)
+        .filter(models.Dataset.project_id == project_id, models.MLModel.name == name)
+        .count()
+        + 1
+    )
+    metrics = evaluate_model(net, str(dataset_absolute_path(dataset)))
+    paths = save_imported_model(
+        net,
+        storage.models,
+        f"{name}-v{version}",
+        metrics,
+        dataset_sha256=dataset.sha256,
+        source_filename=file.filename,
+    )
+
+    storage_dir = get_settings().storage_dir
+    model = models.MLModel(
+        dataset_id=dataset.id,
+        name=name,
+        version=version,
+        pt_path=str(Path(paths["pt_path"]).relative_to(storage_dir)),
+        json_path=str(Path(paths["json_path"]).relative_to(storage_dir)),
+        metrics=metrics,
+        config={"imported": True, "source_filename": file.filename},
+    )
+    db.add(model)
+    db.commit()
+    db.refresh(model)
     return model
 
 

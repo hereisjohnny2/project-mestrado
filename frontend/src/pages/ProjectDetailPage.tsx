@@ -248,6 +248,12 @@ export default function ProjectDetailPage() {
           >
             Dataset e treino
           </Link>
+          <Link
+            to={`/projects/${project.id}/segmentation`}
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+          >
+            Segmentação
+          </Link>
           <button
             onClick={onDeleteProject}
             className="rounded-lg border border-red-900 px-3 py-1.5 text-sm text-red-400 hover:bg-red-950"

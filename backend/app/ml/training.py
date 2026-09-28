@@ -88,6 +88,32 @@ def _confusion_and_per_class(test_dataloader, net) -> tuple[list[list[int]], dic
     return confusion_matrix, per_class
 
 
+def evaluate_model(net: RockNetModel, dataset_path: str) -> dict:
+    """Metrics of an already-trained ``net`` over a whole ``.dat`` file.
+
+    Used for models imported from the legacy CLI, which saved no metrics:
+    the numbers describe the model on *that* dataset (it may include the
+    model's own training pixels, since the original split is unknown).
+    """
+    from torch.utils.data import DataLoader
+
+    from .dataset import CustomDataset, load_data_from_file
+
+    start = time.time()
+    loader = DataLoader(CustomDataset(load_data_from_file(dataset_path)), batch_size=1024, shuffle=False)
+    net.eval()
+    confusion_matrix, per_class = _confusion_and_per_class(loader, net)
+    (tn, fp), (fn, tp) = confusion_matrix
+    total = tn + fp + fn + tp
+    return {
+        "accuracy": (tn + tp) / total if total else 0.0,
+        "loss_curve": [],
+        "confusion_matrix": confusion_matrix,
+        "per_class": per_class,
+        "duration_ms": (time.time() - start) * 1000,
+    }
+
+
 def train(
     dataset_path: str,
     config: TrainingConfig | None = None,
