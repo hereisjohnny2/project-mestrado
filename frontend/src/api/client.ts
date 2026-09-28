@@ -237,3 +237,61 @@ export function listModels(projectId: string): Promise<ModelSummary[]> {
 export function modelDownloadUrl(modelId: string, fmt: "pt" | "json" | "scripted" = "pt"): string {
   return `/api/models/${modelId}/download?fmt=${fmt}`;
 }
+
+// --- Fase 3: batch segmentation ---------------------------------------
+
+export interface SegmentationRun {
+  id: string;
+  model_id: string;
+  status: "pending" | "running" | "done" | "failed";
+  total: number;
+  done: number;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface SegmentationResult {
+  id: string;
+  run_id: string;
+  image_id: string;
+  filename: string;
+  porosity: number;
+  time_ms: number;
+}
+
+export function startSegmentationRun(modelId: string, imageIds: string[]): Promise<SegmentationRun> {
+  return request("/api/segmentation/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model_id: modelId, image_ids: imageIds }),
+  });
+}
+
+export function listRuns(projectId: string): Promise<SegmentationRun[]> {
+  return request(`/api/projects/${projectId}/runs`);
+}
+
+export function getRunResults(runId: string): Promise<SegmentationResult[]> {
+  return request(`/api/segmentation/runs/${runId}/results`);
+}
+
+export function deleteRun(runId: string): Promise<void> {
+  return request(`/api/segmentation/runs/${runId}`, { method: "DELETE" });
+}
+
+export function runStreamUrl(runId: string): string {
+  return `/api/segmentation/runs/${runId}/stream`;
+}
+
+export function runExportUrl(runId: string, fmt: "csv" | "zip"): string {
+  return `/api/segmentation/runs/${runId}/export?fmt=${fmt}`;
+}
+
+export function resultBinUrl(resultId: string): string {
+  return `/api/segmentation/results/${resultId}/bin`;
+}
+
+export function resultOverlayUrl(resultId: string): string {
+  return `/api/segmentation/results/${resultId}/overlay`;
+}
