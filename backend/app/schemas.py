@@ -146,6 +146,8 @@ class ModelOut(BaseModel):
 
 
 class SegmentationRunCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     model_id: str
     image_ids: list[str]
 
