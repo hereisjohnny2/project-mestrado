@@ -40,11 +40,13 @@ nano .env.prod          # ROCKSEG_DOMAIN, ROCKSEG_SECRET_KEY (valor longo e alea
 
 No repositório **honda-rag** (não neste), em `/opt/honda-rag/deploy/edge/.env.edge`, confirme que
 `ROCKSEG_DOMAIN` está com o mesmo valor do passo 3. O arquivo de site (`sites/rockseg.caddy`) já vem do
-repositório — só falta a variável e um reload:
+repositório — falta só a variável. Como é uma variável de ambiente **nova** nesse contêiner, um
+`caddy reload` não basta (só recarrega o Caddyfile do disco, não pega variável nova); é preciso recriar
+o contêiner:
 ```bash
 cd /opt/honda-rag/deploy/edge
 nano .env.edge                                                        # ROCKSEG_DOMAIN=rockseg.seudominio.com
-docker compose --env-file .env.edge exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+docker compose --env-file .env.edge up -d --force-recreate
 ```
 
 ## 5. Subir
