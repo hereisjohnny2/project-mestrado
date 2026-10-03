@@ -20,3 +20,9 @@ frontend/.vite/
 *.dat
 .DS_Store
 frontend/tsconfig.tsbuildinfo
+
+# deploy (VPS)
+.env.prod
+deploy_key
+deploy_key.pub
+known_hosts

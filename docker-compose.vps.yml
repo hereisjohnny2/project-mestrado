@@ -1,0 +1,51 @@
+# Deploy na VPS (compartilhada com outras apps atrás do proxy edge/ do honda-rag).
+# Uso, na pasta do projeto no servidor (passo a passo em deploy/DEPLOY.md):
+#   docker compose --env-file .env.prod -f docker-compose.vps.yml up -d --build
+# Depois do primeiro deploy, as atualizações vêm do GitHub Actions (.github/workflows/deploy.yml).
+#
+# Este compose não publica nenhuma porta: o HTTPS é do proxy compartilhado da VPS (o mesmo do
+# honda-rag, repositório separado), que entra na rede externa `edge` (ela já existe se o honda-rag
+# já estiver na VPS; senão, `docker network create edge`). O backend fica só na rede interna deste
+# compose — só o frontend (nginx) entra na `edge`, porque é ele quem faz proxy de /api pro backend.
+name: rockseg
+
+services:
+  backend:
+    image: rockseg-backend:current
+    build: ./backend
+    container_name: rockseg-backend
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      ROCKSEG_STORAGE_DIR: /app/storage
+      ROCKSEG_COOKIE_SECURE: "true"
+      ROCKSEG_CORS_ORIGINS: '["https://${ROCKSEG_DOMAIN:?defina ROCKSEG_DOMAIN no .env.prod}"]'
+    volumes:
+      - storage:/app/storage
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 1500m    # torch CPU-only; ajuste conforme `docker stats` (a VPS também roda o honda-rag)
+
+  frontend:
+    image: rockseg-frontend:current
+    build: ./frontend
+    container_name: rockseg-frontend
+    restart: unless-stopped
+    networks:
+      - default
+      - edge
+    depends_on:
+      backend:
+        condition: service_healthy
+    mem_limit: 64m
+
+networks:
+  edge:
+    external: true     # proxy compartilhado da VPS; criada com `docker network create edge`
+
+volumes:
+  storage:
