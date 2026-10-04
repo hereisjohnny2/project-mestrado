@@ -51,19 +51,19 @@ def test_generate_dataset_from_masks(api_client):
     resp = api_client.post(f"/projects/{project['id']}/datasets")
     assert resp.status_code == 201
     dataset = resp.json()
-    assert dataset["n_pore"] == 40
-    assert dataset["n_solid"] == 60
+    assert dataset["class_counts"] == {"Poro": 40, "Sólido": 60}
     assert dataset["n_pixels"] == 100
+    assert [c["name"] for c in dataset["classes"]] == ["Poro", "Sólido"]
 
     resp = api_client.get(f"/datasets/{dataset['id']}/stats")
     assert resp.status_code == 200
-    assert resp.json()["n_pore"] == 40
+    assert resp.json()["class_counts"]["Poro"] == 40
 
     resp = api_client.get(f"/datasets/{dataset['id']}/histogram")
     assert resp.status_code == 200
     body = resp.json()
-    assert sum(body["pore"]["r"]) == 40
-    assert sum(body["solid"]["r"]) == 60
+    assert sum(body["classes"]["Poro"]["r"]) == 40
+    assert sum(body["classes"]["Sólido"]["r"]) == 60
 
     resp = api_client.get(f"/datasets/{dataset['id']}/download")
     assert resp.status_code == 200
@@ -104,6 +104,9 @@ def test_training_job_and_publish_round_trip(api_client):
     model = resp.json()
     assert model["version"] == 1
     assert model["name"] == "modelo-1"
+    assert model["architecture"] == "1.0.0"
+    assert model["config"]["class_names"] == ["Sólido", "Poro"]
+    assert set(model["metrics"]["per_class"]) == {"Sólido", "Poro"}
 
     # publishing again under the same name bumps the version
     resp = api_client.post(f"/training/jobs/{job['id']}/publish", json={"name": "modelo-1"})
@@ -117,7 +120,7 @@ def test_training_job_and_publish_round_trip(api_client):
     assert resp.status_code == 200
     resp = api_client.get(f"/models/{model['id']}/download?fmt=json")
     assert resp.status_code == 200
-    assert json.loads(resp.content)["format_version"] == 1
+    assert json.loads(resp.content)["format_version"] == 2
     resp = api_client.get(f"/models/{model['id']}/download?fmt=scripted")
     assert resp.status_code == 200
 

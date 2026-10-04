@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -55,9 +56,20 @@ class ProjectUpdate(BaseModel):
     name: str
 
 
+class ClassDef(BaseModel):
+    index: int
+    name: str
+    color: str
+
+
+class ClassesUpdate(BaseModel):
+    classes: list[ClassDef]
+
+
 class ProjectOut(BaseModel):
     id: str
     name: str
+    classes: list[ClassDef]
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -84,8 +96,8 @@ class DatasetOut(BaseModel):
     id: str
     project_id: str
     n_pixels: int
-    n_pore: int
-    n_solid: int
+    classes: list[ClassDef]
+    class_counts: dict[str, int]
     sha256: str
     created_at: datetime
 
@@ -94,8 +106,7 @@ class DatasetOut(BaseModel):
 
 class DatasetHistogramOut(BaseModel):
     bin_edges: list[float]
-    pore: dict[str, list[int]]
-    solid: dict[str, list[int]]
+    classes: dict[str, dict[str, list[int]]]  # class name -> {r, g, b} -> counts per bin
 
 
 class TrainingJobCreate(BaseModel):
@@ -105,6 +116,20 @@ class TrainingJobCreate(BaseModel):
     batch_size: int = 16
     split_ratio: float = 0.8
     seed: int | None = None
+    architecture: Literal["1.0.0", "2.0.0"] = "1.0.0"
+    hidden_width: int | None = Field(default=None, ge=2, le=1024)  # 2.0.0 only
+
+
+class ArchitectureOut(BaseModel):
+    id: str
+    title: str
+    description: str
+    feature_names: list[str]
+    input_scale: str
+    supports_multiclass: bool
+    default_hidden_width: int | None
+    hidden_width: int | None
+    layers: list[int]
 
 
 class TrainingMetricsOut(BaseModel):
@@ -120,6 +145,7 @@ class TrainingJobOut(BaseModel):
 
     id: str
     dataset_id: str
+    architecture: str
     status: str
     epoch: int
     epochs: int
@@ -138,6 +164,8 @@ class ModelOut(BaseModel):
     dataset_id: str
     name: str
     version: int
+    architecture: str
+    classes: list[ClassDef]  # the dataset's classes: what the model's outputs refer to
     metrics: dict
     config: dict
     created_at: datetime
@@ -171,6 +199,7 @@ class SegmentationResultOut(BaseModel):
     image_id: str
     filename: str
     porosity: float
+    class_fractions: dict[str, float]
     time_ms: float
 
 

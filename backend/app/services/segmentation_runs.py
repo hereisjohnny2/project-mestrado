@@ -18,7 +18,8 @@ from ..core.storage import ProjectStorage
 from ..db import models
 from ..db.session import get_session_factory
 from ..ml.artifacts import load_model
-from ..ml.inference import apply_binarization, calculate_porosity, save_image, save_overlay
+from ..ml.inference import BINARY_PALETTE, apply_binarization, class_fractions, save_class_map, save_overlay
+from .classes import colors_by_index, output_mapping, pore_class_name
 
 TOTALS: dict[str, int] = {}
 
@@ -55,25 +56,38 @@ def _execute(run_id: str, image_ids: list[str]) -> None:
 
 def _process(db, run: models.Run, image_ids: list[str]) -> None:
     storage_dir = get_settings().storage_dir
-    net = load_model(storage_dir / run.model.pt_path)
-    storage = ProjectStorage(run.model.dataset.project_id)
+    model = run.model
+    index_to_name, overlay_colors = output_mapping(model)
+    net = load_model(
+        storage_dir / model.pt_path,
+        architecture=model.architecture,
+        n_classes=len(index_to_name),
+        hidden_width=model.config.get("hidden_width"),
+    )
+    storage = ProjectStorage(model.dataset.project_id)
     out_dir = storage.runs / run.id
     out_dir.mkdir(parents=True, exist_ok=True)
+    # The binarized image stays black/white for "pore vs. rest" models (the
+    # legacy output); multi-class maps are rendered with the class colors.
+    palette = BINARY_PALETTE if model.architecture == "1.0.0" else {0: (0, 0, 0), **colors_by_index(model.dataset.classes)}
+    pore_name = pore_class_name(model.dataset.classes)
 
     for image_id in image_ids:
         image = db.get(models.Image, image_id)
         if image is None:
             continue
         src = str(storage_dir / image.path)
-        mask, elapsed_ms = apply_binarization(src, net)
+        class_map, elapsed_ms = apply_binarization(src, net, model.architecture)
         prefix = str(out_dir / image.id)
-        bin_path = save_image(mask, prefix)
-        overlay_path = save_overlay(src, mask, prefix)
+        bin_path = save_class_map(class_map, prefix, palette)
+        overlay_path = save_overlay(src, class_map, prefix, overlay_colors)
+        fractions = class_fractions(class_map, index_to_name)
         db.add(
             models.Result(
                 run_id=run.id,
                 image_id=image.id,
-                porosity=calculate_porosity(mask),
+                porosity=fractions.get(pore_name, 0.0),
+                class_fractions=fractions,
                 time_ms=elapsed_ms,
                 bin_path=_rel(bin_path, storage_dir),
                 overlay_path=_rel(overlay_path, storage_dir),

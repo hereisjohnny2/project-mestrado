@@ -15,9 +15,11 @@ from ..core.storage import ProjectStorage, get_settings
 from .deps import get_current_user, get_owned_dataset, get_owned_model, get_owned_project
 from ..db import models
 from ..db.session import get_db
+from ..ml.architectures import ARCHITECTURES, describe, resolve_hidden_width
 from ..ml.artifacts import load_state_dict_safely, save_imported_model, save_model
 from ..ml.training import TrainingConfig, evaluate_model
-from ..schemas import ModelOut, PublishModelRequest, TrainingJobCreate, TrainingJobOut
+from ..schemas import ArchitectureOut, ModelOut, PublishModelRequest, TrainingJobCreate, TrainingJobOut
+from ..services.classes import binary_class_names, class_names
 from ..services.dataset import dataset_absolute_path
 from ..services.training_jobs import get_job, start_job, wait_for_update
 
@@ -46,9 +48,22 @@ def create_training_job(
         batch_size=payload.batch_size,
         split_ratio=payload.split_ratio,
         seed=payload.seed,
+        architecture=payload.architecture,
+        hidden_width=resolve_hidden_width(payload.architecture, payload.hidden_width),
     )
-    job = start_job(user.id, dataset.id, str(dataset_absolute_path(dataset)), config)
+    outputs = binary_class_names(dataset.classes) if payload.architecture == "1.0.0" else class_names(dataset.classes)
+    job = start_job(user.id, dataset.id, str(dataset_absolute_path(dataset)), config, outputs)
     return job.snapshot()
+
+
+@router.get("/architectures", response_model=list[ArchitectureOut])
+def list_architectures(
+    n_classes: int = 2, hidden_width: int | None = None, user: models.User = Depends(get_current_user)
+) -> list[dict]:
+    """Every trainable architecture, with its layers resolved for a project
+    of ``n_classes`` classes (and, for 2.0.0, the given hidden width)."""
+    n_classes = max(2, n_classes)
+    return [describe(arch_id, n_classes=n_classes, hidden_width=hidden_width) for arch_id in ARCHITECTURES]
 
 
 @router.get("/training/jobs/{job_id}", response_model=TrainingJobOut)
@@ -113,6 +128,7 @@ def publish_model(
         dataset_id=dataset.id,
         name=payload.name,
         version=version,
+        architecture=job.result.config.architecture,
         pt_path=str(Path(paths["pt_path"]).relative_to(storage_dir)),
         json_path=str(Path(paths["json_path"]).relative_to(storage_dir)),
         metrics={
@@ -128,6 +144,9 @@ def publish_model(
             "batch_size": job.result.config.batch_size,
             "split_ratio": job.result.config.split_ratio,
             "seed": job.result.config.seed,
+            "architecture": job.result.config.architecture,
+            "hidden_width": job.result.config.hidden_width,
+            "class_names": job.result.class_names,
         },
     )
     db.add(model)
@@ -170,7 +189,8 @@ def import_legacy_model(
         .count()
         + 1
     )
-    metrics = evaluate_model(net, str(dataset_absolute_path(dataset)))
+    outputs = binary_class_names(dataset.classes)
+    metrics = evaluate_model(net, str(dataset_absolute_path(dataset)), outputs)
     paths = save_imported_model(
         net,
         storage.models,
@@ -178,6 +198,7 @@ def import_legacy_model(
         metrics,
         dataset_sha256=dataset.sha256,
         source_filename=file.filename,
+        class_names=outputs,
     )
 
     storage_dir = get_settings().storage_dir
@@ -185,10 +206,11 @@ def import_legacy_model(
         dataset_id=dataset.id,
         name=name,
         version=version,
+        architecture="1.0.0",
         pt_path=str(Path(paths["pt_path"]).relative_to(storage_dir)),
         json_path=str(Path(paths["json_path"]).relative_to(storage_dir)),
         metrics=metrics,
-        config={"imported": True, "source_filename": file.filename},
+        config={"imported": True, "source_filename": file.filename, "class_names": outputs},
     )
     db.add(model)
     db.commit()

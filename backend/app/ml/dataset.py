@@ -59,8 +59,9 @@ def create_dataloaders(
     data: str | Path,
     ratio: float = 0.8,
     batch_size: int = 16,
+    pore_label: str = "Poro",
 ) -> tuple[DataLoader, DataLoader]:
-    dataset = CustomDataset(load_data_from_file(data))
+    dataset = CustomDataset(load_data_from_file(data, pore_label))
     train_dataset, test_dataset = split_dataset(dataset, ratio)
 
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -69,47 +70,49 @@ def create_dataloaders(
     return train_dataloader, test_dataloader
 
 
-def dataset_stats(data: str | Path, pore_label: str = "Poro") -> dict:
+def load_rows(file_name: str | Path) -> list[tuple[int, int, int, str]]:
+    """Every ``.dat`` row with its label kept as text — the multi-class view
+    of the same file ``load_data_from_file`` reads as pore / not-pore."""
+    rows = []
+    with open(file_name, "r") as f:
+        for line in f:
+            fields = line.rstrip("\n").split("\t")
+            rows.append((int(fields[0]), int(fields[1]), int(fields[2]), fields[3]))
+    return rows
+
+
+def dataset_stats(data: str | Path, class_names: list[str]) -> dict:
     """Class balance for a ``.dat`` file — used by the dataset screen."""
-    content = load_data_from_file(data, pore_label)
-    n_pore = sum(row[3] for row in content)
-    n_total = len(content)
+    rows = load_rows(data)
+    counts = {name: 0 for name in class_names}
+    for *_, label in rows:
+        if label in counts:
+            counts[label] += 1
+    n_total = len(rows)
     return {
         "n_pixels": n_total,
-        "n_pore": n_pore,
-        "n_solid": n_total - n_pore,
-        "pore_ratio": (n_pore / n_total) if n_total else 0.0,
+        "class_counts": counts,
+        "class_ratios": {name: (n / n_total if n_total else 0.0) for name, n in counts.items()},
     }
 
 
-def dataset_histogram(data: str | Path, bins: int = 32, pore_label: str = "Poro") -> dict:
+def dataset_histogram(data: str | Path, class_names: list[str], bins: int = 32) -> dict:
     """Per-channel, per-class RGB histogram (plan §5.2: shows whether the
-    two classes are separable in color space, i.e. what the MLP actually
-    sees). 0-255 range, fixed bin count regardless of dataset size."""
+    classes are separable in color space, i.e. what the MLP actually sees).
+    0-255 range, fixed bin count regardless of dataset size."""
     import numpy as np
 
-    content = load_data_from_file(data, pore_label)
-    arr = np.array(content, dtype=np.int64)
+    rows = load_rows(data)
+    rgb = np.array([row[:3] for row in rows], dtype=np.int64).reshape(-1, 3)
+    labels = np.array([row[3] for row in rows])
     edges = np.linspace(0, 255, bins + 1)
 
     def channel_hist(mask: np.ndarray, channel: int) -> list[int]:
-        values = arr[mask, channel]
-        counts, _ = np.histogram(values, bins=edges)
+        counts, _ = np.histogram(rgb[mask, channel], bins=edges)
         return counts.tolist()
 
-    is_pore = arr[:, 3] == 1
-    is_solid = ~is_pore
-
-    return {
-        "bin_edges": edges.tolist(),
-        "pore": {
-            "r": channel_hist(is_pore, 0),
-            "g": channel_hist(is_pore, 1),
-            "b": channel_hist(is_pore, 2),
-        },
-        "solid": {
-            "r": channel_hist(is_solid, 0),
-            "g": channel_hist(is_solid, 1),
-            "b": channel_hist(is_solid, 2),
-        },
-    }
+    classes = {}
+    for name in class_names:
+        mask = labels == name
+        classes[name] = {"r": channel_hist(mask, 0), "g": channel_hist(mask, 1), "b": channel_hist(mask, 2)}
+    return {"bin_edges": edges.tolist(), "classes": classes}

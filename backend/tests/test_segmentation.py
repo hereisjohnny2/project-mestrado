@@ -75,13 +75,18 @@ def test_segmentation_run_matches_legacy_porosity(api_client, tmp_path):
         img_path.write_bytes(api_client.get(f"/images/{image['id']}/file").content)
         mask, _ = legacy_apply_binarization(str(img_path), legacy)
         assert result["porosity"] == legacy_calculate_porosity(mask)
+        assert result["class_fractions"]["Poro"] == result["porosity"]
+        assert abs(sum(result["class_fractions"].values()) - 1.0) < 1e-9
 
-        bin_png = np.asarray(PILImage.open(io.BytesIO(api_client.get(f"/segmentation/results/{result['id']}/bin").content)))
-        assert np.array_equal(bin_png // 255, mask)
+        # Paletted PNG: pixel values are the class indices, rendered black/white.
+        bin_img = PILImage.open(io.BytesIO(api_client.get(f"/segmentation/results/{result['id']}/bin").content))
+        assert bin_img.mode == "P"
+        assert np.array_equal(np.asarray(bin_img), mask)
+        assert np.array_equal(np.asarray(bin_img.convert("L")) // 255, mask)
         assert api_client.get(f"/segmentation/results/{result['id']}/overlay").status_code == 200
 
     csv_rows = list(csv.reader(io.StringIO(api_client.get(f"/segmentation/runs/{run['id']}/export").text)))
-    assert csv_rows[0] == ["nome", "porosidade", "tempo_ms"]
+    assert csv_rows[0] == ["nome", "porosidade", "tempo_ms", "Sólido", "Poro"]
     assert len(csv_rows) == 4
 
     z = zipfile.ZipFile(io.BytesIO(api_client.get(f"/segmentation/runs/{run['id']}/export?fmt=zip").content))

@@ -110,7 +110,8 @@ def seed(client: httpx.Client) -> None:
         ).raise_for_status()
 
     dataset = client.post(f"/projects/{project['id']}/datasets").raise_for_status().json()
-    print(f"Dataset: {dataset['n_pixels']} pixels ({dataset['n_pore']} poro, {dataset['n_solid']} sólido)")
+    counts = ", ".join(f"{n} {name}" for name, n in dataset["class_counts"].items())
+    print(f"Dataset: {dataset['n_pixels']} pixels ({counts})")
 
     job = client.post(
         "/training/jobs", json={"dataset_id": dataset["id"], "epochs": 5, "seed": 0}

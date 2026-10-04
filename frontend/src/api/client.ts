@@ -1,9 +1,18 @@
 // Thin fetch wrappers over the backend API (plan §4.4). Every request goes
 // through /api, which vite (dev) / nginx (prod) rewrite to the backend root.
 
+// A project's classes: masks store the index per pixel (0 = unannotated).
+// Index 1 is, by convention, the class whose fraction is reported as porosity.
+export interface ClassDef {
+  index: number;
+  name: string;
+  color: string; // #rrggbb
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;
+  classes: ClassDef[];
   created_at: string;
 }
 
@@ -144,6 +153,18 @@ export function getProject(projectId: string): Promise<ProjectDetail> {
   return request(`/api/projects/${projectId}`);
 }
 
+export function updateClasses(projectId: string, classes: ClassDef[]): Promise<ClassDef[]> {
+  return request(`/api/projects/${projectId}/classes`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ classes }),
+  });
+}
+
+export function hexToRgb(color: string): [number, number, number] {
+  return [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16)];
+}
+
 export function uploadImages(projectId: string, files: FileList | File[]): Promise<ImageSummary[]> {
   const form = new FormData();
   for (const file of Array.from(files)) form.append("files", file);
@@ -191,16 +212,15 @@ export interface DatasetSummary {
   id: string;
   project_id: string;
   n_pixels: number;
-  n_pore: number;
-  n_solid: number;
+  classes: ClassDef[];
+  class_counts: Record<string, number>;
   sha256: string;
   created_at: string;
 }
 
 export interface DatasetHistogram {
   bin_edges: number[];
-  pore: { r: number[]; g: number[]; b: number[] };
-  solid: { r: number[]; g: number[]; b: number[] };
+  classes: Record<string, { r: number[]; g: number[]; b: number[] }>;
 }
 
 export interface TrainingMetrics {
@@ -214,6 +234,7 @@ export interface TrainingMetrics {
 export interface TrainingJob {
   id: string;
   dataset_id: string;
+  architecture: string;
   status: "pending" | "running" | "done" | "failed";
   epoch: number;
   epochs: number;
@@ -230,6 +251,28 @@ export interface TrainingJobParams {
   batch_size?: number;
   split_ratio?: number;
   seed?: number | null;
+  architecture?: ArchitectureId;
+  hidden_width?: number | null; // 2.0.0 only
+}
+
+export type ArchitectureId = "1.0.0" | "2.0.0";
+
+export interface ArchitectureInfo {
+  id: ArchitectureId;
+  title: string;
+  description: string;
+  feature_names: string[];
+  input_scale: string;
+  supports_multiclass: boolean;
+  default_hidden_width: number | null;
+  hidden_width: number | null;
+  layers: number[];
+}
+
+export function listArchitectures(nClasses: number, hiddenWidth?: number | null): Promise<ArchitectureInfo[]> {
+  const params = new URLSearchParams({ n_classes: String(nClasses) });
+  if (hiddenWidth) params.set("hidden_width", String(hiddenWidth));
+  return request(`/api/architectures?${params}`);
 }
 
 export interface ModelSummary {
@@ -237,9 +280,19 @@ export interface ModelSummary {
   dataset_id: string;
   name: string;
   version: number;
+  architecture: string;
+  classes: ClassDef[]; // the dataset's classes, i.e. what the outputs refer to
   metrics: TrainingMetrics;
   config: Record<string, unknown>;
   created_at: string;
+}
+
+// Metrics of models published before class lists existed are keyed by
+// "pore"/"solid"; newer ones by the class name.
+export function classLabel(key: string): string {
+  if (key === "pore") return "Poro";
+  if (key === "solid") return "Sólido";
+  return key;
 }
 
 export function listDatasets(projectId: string): Promise<DatasetSummary[]> {
@@ -323,6 +376,7 @@ export interface SegmentationResult {
   image_id: string;
   filename: string;
   porosity: number;
+  class_fractions: Record<string, number>;
   time_ms: number;
 }
 

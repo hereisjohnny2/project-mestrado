@@ -12,6 +12,7 @@ from ..db import models
 from ..db.session import get_db
 from ..ml.dataset import dataset_histogram, dataset_stats
 from ..schemas import DatasetHistogramOut, DatasetOut
+from ..services.classes import class_names
 from ..services.dataset import (
     EmptyDatasetError,
     InvalidDatasetError,
@@ -33,15 +34,7 @@ def create_dataset(project_id: str, user: models.User = Depends(get_current_user
     except EmptyDatasetError as exc:
         raise HTTPException(422, str(exc)) from exc
 
-    dataset = models.Dataset(
-        id=fields["id"],
-        project_id=project.id,
-        path=fields["path"],
-        n_pixels=fields["n_pixels"],
-        n_pore=fields["n_pore"],
-        n_solid=fields["n_solid"],
-        sha256=fields["sha256"],
-    )
+    dataset = models.Dataset(project_id=project.id, **fields)
     db.add(dataset)
     db.commit()
     db.refresh(dataset)
@@ -82,13 +75,13 @@ def get_dataset(dataset_id: str, user: models.User = Depends(get_current_user), 
 @router.get("/datasets/{dataset_id}/stats")
 def get_dataset_stats(dataset_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     dataset = get_owned_dataset(db, user, dataset_id)
-    return dataset_stats(dataset_absolute_path(dataset))
+    return dataset_stats(dataset_absolute_path(dataset), class_names(dataset.classes))
 
 
 @router.get("/datasets/{dataset_id}/histogram", response_model=DatasetHistogramOut)
 def get_dataset_histogram(dataset_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
     dataset = get_owned_dataset(db, user, dataset_id)
-    return dataset_histogram(dataset_absolute_path(dataset))
+    return dataset_histogram(dataset_absolute_path(dataset), class_names(dataset.classes))
 
 
 @router.get("/datasets/{dataset_id}/download")

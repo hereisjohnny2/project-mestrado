@@ -1,32 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { clearMask, fetchMaskBlob, imageFileUrl, saveMask } from "../../api/client";
+import { ClassDef, clearMask, fetchMaskBlob, hexToRgb, imageFileUrl, saveMask } from "../../api/client";
 import { useToast } from "../../components/ToastProvider";
 import { useConfirm } from "../../components/ConfirmProvider";
 import Kbd from "../../components/Kbd";
 
 // Mask encoding on disk (plan §4.3): a PNG where each pixel's value is the
-// class index — 0 = unannotated, 1 = poro, 2 = solido. We keep that same
-// index in memory as a flat Uint8Array (`maskData`, one byte per pixel) and
-// only turn it into translucent display colors when compositing a frame.
+// class index — 0 = unannotated, 1..K = the project's classes. We keep that
+// same index in memory as a flat Uint8Array (`maskData`, one byte per pixel)
+// and only turn it into translucent display colors when compositing a frame.
 
 type Tool = "brush" | "eraser";
-type AnnotationClass = 1 | 2; // 1 = poro, 2 = solido
 
-const CLASS_COLOR: Record<AnnotationClass, [number, number, number]> = {
-  1: [37, 99, 235], // poro — blue
-  2: [234, 88, 12], // solido — orange
-};
 const OVERLAY_ALPHA = 150;
 const AUTOSAVE_DEBOUNCE_MS = 2000;
 const UNDO_LIMIT = 40;
 
 interface Props {
   imageId: string;
+  classes: ClassDef[];
 }
 
 type SaveState = "idle" | "pending" | "saving" | "saved" | "error";
 
-export default function AnnotationCanvas({ imageId }: Props) {
+export default function AnnotationCanvas({ imageId, classes }: Props) {
+  const colorByIndex = useMemo(() => {
+    const map = new Map<number, [number, number, number]>();
+    for (const c of classes) map.set(c.index, hexToRgb(c.color));
+    return map;
+  }, [classes]);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -41,11 +42,11 @@ export default function AnnotationCanvas({ imageId }: Props) {
 
   const [loaded, setLoaded] = useState(false);
   const [tool, setTool] = useState<Tool>("brush");
-  const [activeClass, setActiveClass] = useState<AnnotationClass>(1);
+  const [activeClass, setActiveClass] = useState<number>(1);
   const [brushSize, setBrushSize] = useState(16);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [counts, setCounts] = useState({ poro: 0, solido: 0 });
+  const [counts, setCounts] = useState<Record<number, number>>({});
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [, forceRender] = useState(0);
 
@@ -62,14 +63,18 @@ export default function AnnotationCanvas({ imageId }: Props) {
   const recountAll = useCallback(() => {
     const data = maskDataRef.current;
     if (!data) return;
-    let poro = 0;
-    let solido = 0;
+    const next: Record<number, number> = {};
     for (let i = 0; i < data.length; i++) {
-      if (data[i] === 1) poro++;
-      else if (data[i] === 2) solido++;
+      const cls = data[i];
+      if (cls !== 0) next[cls] = (next[cls] ?? 0) + 1;
     }
-    setCounts({ poro, solido });
+    setCounts(next);
   }, []);
+
+  // If the active class was removed from the project, fall back to the first.
+  useEffect(() => {
+    if (!colorByIndex.has(activeClass)) setActiveClass(classes[0]?.index ?? 1);
+  }, [classes, colorByIndex, activeClass]);
 
   const composite = useCallback(() => {
     const canvas = canvasRef.current;
@@ -92,10 +97,11 @@ export default function AnnotationCanvas({ imageId }: Props) {
     for (let i = 0, p = 0; i < data.length; i++, p += 4) {
       const cls = data[i];
       if (cls === 0) continue;
-      const [r, g, b] = CLASS_COLOR[cls as AnnotationClass];
-      out[p] = r;
-      out[p + 1] = g;
-      out[p + 2] = b;
+      const color = colorByIndex.get(cls);
+      if (!color) continue;
+      out[p] = color[0];
+      out[p + 1] = color[1];
+      out[p + 2] = color[2];
       out[p + 3] = OVERLAY_ALPHA;
     }
     // createImageData + drawImage needs an intermediate canvas since
@@ -109,7 +115,7 @@ export default function AnnotationCanvas({ imageId }: Props) {
     }
     scratch.getContext("2d")!.putImageData(overlay, 0, 0);
     ctx.drawImage(scratch, 0, 0);
-  }, [zoom, pan]);
+  }, [zoom, pan, colorByIndex]);
 
   // Load image + existing mask once.
   useEffect(() => {
@@ -142,7 +148,7 @@ export default function AnnotationCanvas({ imageId }: Props) {
         tctx.drawImage(maskImg, 0, 0);
         const px = tctx.getImageData(0, 0, width, height).data;
         for (let i = 0, p = 0; i < data.length; i++, p += 4) {
-          data[i] = px[p] as 0 | 1 | 2;
+          data[i] = px[p];
         }
       }
       if (cancelled) return;
@@ -223,7 +229,7 @@ export default function AnnotationCanvas({ imageId }: Props) {
     [pan, zoom],
   );
 
-  const stampAt = useCallback((x: number, y: number, radius: number, value: 0 | AnnotationClass) => {
+  const stampAt = useCallback((x: number, y: number, radius: number, value: number) => {
     const data = maskDataRef.current;
     const { width, height } = dimsRef.current;
     if (!data) return;
@@ -242,7 +248,7 @@ export default function AnnotationCanvas({ imageId }: Props) {
   }, []);
 
   const stampSegment = useCallback(
-    (from: { x: number; y: number }, to: { x: number; y: number }, radius: number, value: 0 | AnnotationClass) => {
+    (from: { x: number; y: number }, to: { x: number; y: number }, radius: number, value: number) => {
       const dist = Math.hypot(to.x - from.x, to.y - from.y);
       const steps = Math.max(1, Math.ceil(dist / Math.max(1, radius / 2)));
       for (let s = 0; s <= steps; s++) {
@@ -269,7 +275,7 @@ export default function AnnotationCanvas({ imageId }: Props) {
       isPainting.current = true;
       strokeStartSnapshot.current = maskDataRef.current ? maskDataRef.current.slice() : null;
       lastPoint.current = { x: pt.x, y: pt.y };
-      const value: 0 | AnnotationClass = tool === "eraser" ? 0 : activeClass;
+      const value = tool === "eraser" ? 0 : activeClass;
       stampAt(pt.x, pt.y, brushSize / 2, value);
       composite();
     },
@@ -290,7 +296,7 @@ export default function AnnotationCanvas({ imageId }: Props) {
       }
 
       if (isPainting.current && lastPoint.current) {
-        const value: 0 | AnnotationClass = tool === "eraser" ? 0 : activeClass;
+        const value = tool === "eraser" ? 0 : activeClass;
         stampSegment(lastPoint.current, pt, brushSize / 2, value);
         lastPoint.current = { x: pt.x, y: pt.y };
         composite();
@@ -371,17 +377,15 @@ export default function AnnotationCanvas({ imageId }: Props) {
     setPan({ x: (canvas.width - width * fitZoom) / 2, y: (canvas.height - height * fitZoom) / 2 });
   }, []);
 
-  // Keyboard shortcuts: 1/2 select class, space+drag pans, ctrl+z / ctrl+shift+z undo/redo, 0 fits.
+  // Keyboard shortcuts: 1-9 select class, space+drag pans, ctrl+z / ctrl+shift+z undo/redo, 0 fits.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return;
       if (e.code === "Space") {
         spaceHeld.current = true;
         e.preventDefault();
-      } else if (e.key === "1") {
-        setActiveClass(1);
-        setTool("brush");
-      } else if (e.key === "2") {
-        setActiveClass(2);
+      } else if (/^[1-9]$/.test(e.key) && colorByIndex.has(Number(e.key))) {
+        setActiveClass(Number(e.key));
         setTool("brush");
       } else if (e.key.toLowerCase() === "b") {
         setTool("brush");
@@ -409,7 +413,7 @@ export default function AnnotationCanvas({ imageId }: Props) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [fitToScreen, undo, redo, clearAnnotation]);
+  }, [fitToScreen, undo, redo, clearAnnotation, colorByIndex]);
 
   const onWheel = useCallback(
     (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -475,27 +479,26 @@ export default function AnnotationCanvas({ imageId }: Props) {
             Borracha <Kbd>E</Kbd>
           </button>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            className={`rounded-lg border px-3 py-1.5 text-sm ${
-              activeClass === 1
-                ? "border-poro bg-blue-950/50 text-blue-200"
-                : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-            }`}
-            onClick={() => setActiveClass(1)}
-          >
-            Poro <Kbd>1</Kbd>
-          </button>
-          <button
-            className={`rounded-lg border px-3 py-1.5 text-sm ${
-              activeClass === 2
-                ? "border-solido bg-orange-950/50 text-orange-200"
-                : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-            }`}
-            onClick={() => setActiveClass(2)}
-          >
-            Sólido <Kbd>2</Kbd>
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {classes.map((c) => {
+            const active = activeClass === c.index;
+            return (
+              <button
+                key={c.index}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm ${
+                  active ? "text-zinc-100" : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                }`}
+                style={active ? { borderColor: c.color, backgroundColor: `${c.color}33` } : undefined}
+                onClick={() => {
+                  setActiveClass(c.index);
+                  setTool("brush");
+                }}
+              >
+                <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: c.color }} />
+                {c.name} {c.index <= 9 && <Kbd>{String(c.index)}</Kbd>}
+              </button>
+            );
+          })}
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-300">
           Tamanho
@@ -535,13 +538,13 @@ export default function AnnotationCanvas({ imageId }: Props) {
             Limpar <Kbd>C</Kbd>
           </button>
         </div>
-        <div className="flex items-center gap-3 text-sm text-zinc-300">
-          <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-poro" /> Poro: {counts.poro.toLocaleString()}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-3 w-3 rounded-sm bg-solido" /> Sólido: {counts.solido.toLocaleString()}
-          </span>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-300">
+          {classes.map((c) => (
+            <span key={c.index} className="flex items-center gap-1.5">
+              <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: c.color }} /> {c.name}:{" "}
+              {(counts[c.index] ?? 0).toLocaleString()}
+            </span>
+          ))}
         </div>
         <div className={`ml-auto rounded-full px-3 py-1 text-xs ${saveIndicatorStyle[saveState]}`}>
           {saveState === "idle" && "sem alterações"}
