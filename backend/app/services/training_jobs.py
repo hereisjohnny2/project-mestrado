@@ -26,6 +26,7 @@ class JobState:
     dataset_id: str
     dataset_path: str
     config: TrainingConfig
+    class_names: list[str] = field(default_factory=list)
     status: str = "pending"  # pending | running | done | failed
     epoch: int = 0
     epochs: int = 0
@@ -40,6 +41,7 @@ class JobState:
             return {
                 "id": self.id,
                 "dataset_id": self.dataset_id,
+                "architecture": self.config.architecture,
                 "status": self.status,
                 "epoch": self.epoch,
                 "epochs": self.epochs,
@@ -65,8 +67,16 @@ def _metrics(result: TrainingResult | None) -> dict | None:
 JOBS: dict[str, JobState] = {}
 
 
-def start_job(owner_id: str, dataset_id: str, dataset_path: str, config: TrainingConfig) -> JobState:
-    job = JobState(id=str(uuid.uuid4()), owner_id=owner_id, dataset_id=dataset_id, dataset_path=dataset_path, config=config, epochs=config.epochs)
+def start_job(owner_id: str, dataset_id: str, dataset_path: str, config: TrainingConfig, class_names: list[str]) -> JobState:
+    job = JobState(
+        id=str(uuid.uuid4()),
+        owner_id=owner_id,
+        dataset_id=dataset_id,
+        dataset_path=dataset_path,
+        config=config,
+        class_names=list(class_names),
+        epochs=config.epochs,
+    )
     JOBS[job.id] = job
 
     def on_epoch_end(epoch_index: int, epochs: int, loss_value: float | None) -> None:
@@ -80,7 +90,7 @@ def start_job(owner_id: str, dataset_id: str, dataset_path: str, config: Trainin
         with job._lock:
             job.status = "running"
         try:
-            result = train(dataset_path, config, on_epoch_end=on_epoch_end)
+            result = train(dataset_path, config, on_epoch_end=on_epoch_end, class_names=job.class_names)
             with job._lock:
                 job.result = result
                 job.status = "done"

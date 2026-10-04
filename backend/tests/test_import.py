@@ -33,11 +33,14 @@ def test_import_dat_counts_and_downloads_identically(api_client):
     resp = _import_dat(api_client, project)
     assert resp.status_code == 201
     ds = resp.json()
-    assert (ds["n_pixels"], ds["n_pore"], ds["n_solid"]) == (50, 20, 30)
+    assert ds["n_pixels"] == 50
+    assert ds["class_counts"] == {"Poro": 20, "Solido": 30}
+    # "Poro" is pinned to index 1 even though "Solido" appears first in the file
+    assert [c["name"] for c in ds["classes"]] == ["Poro", "Solido"]
 
     downloaded = api_client.get(f"/datasets/{ds['id']}/download").content.decode()
     assert downloaded == DAT
-    assert api_client.get(f"/datasets/{ds['id']}/stats").json()["n_pore"] == 20
+    assert api_client.get(f"/datasets/{ds['id']}/stats").json()["class_counts"]["Poro"] == 20
 
 
 def test_import_dat_rejects_malformed_lines(api_client):

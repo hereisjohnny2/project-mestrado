@@ -22,10 +22,13 @@ from pathlib import Path
 
 import torch
 
+from .architectures import build_model, get_architecture, resolve_hidden_width
 from .model import RockNetModel
 from .training import TrainingResult
 
-ARTIFACT_FORMAT_VERSION = 1
+# 1: bare legacy port. 2: adds architecture / hidden_width / class_names /
+# feature_names (format-1 files are always architecture 1.0.0).
+ARTIFACT_FORMAT_VERSION = 2
 
 
 def save_model(result: TrainingResult, output_dir: str | Path, name: str, dataset_sha256: str | None = None) -> dict:
@@ -42,10 +45,15 @@ def save_model(result: TrainingResult, output_dir: str | Path, name: str, datase
     scripted = torch.jit.script(result.model.eval())
     scripted.save(str(scripted_path))
 
+    architecture = result.config.architecture
     metadata = {
         "format_version": ARTIFACT_FORMAT_VERSION,
         "created_at": time.time(),
         "dataset_sha256": dataset_sha256,
+        "architecture": architecture,
+        "hidden_width": resolve_hidden_width(architecture, result.config.hidden_width),
+        "class_names": result.class_names,
+        "feature_names": get_architecture(architecture).feature_names,
         "config": asdict(result.config),
         "metrics": {
             "accuracy": result.accuracy,
@@ -67,10 +75,12 @@ def save_imported_model(
     metrics: dict,
     dataset_sha256: str | None = None,
     source_filename: str | None = None,
+    class_names: list[str] | None = None,
 ) -> dict:
     """Same .pt / .json / -scripted.pt triple as ``save_model``, for a
-    ``state_dict`` trained elsewhere (the legacy CLI). There is no training
-    config to record, so ``config`` only marks the model as imported."""
+    ``state_dict`` trained elsewhere (the legacy CLI, so always architecture
+    1.0.0). There is no training config to record, so ``config`` only marks
+    the model as imported."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -85,6 +95,10 @@ def save_imported_model(
         "format_version": ARTIFACT_FORMAT_VERSION,
         "created_at": time.time(),
         "dataset_sha256": dataset_sha256,
+        "architecture": "1.0.0",
+        "hidden_width": None,
+        "class_names": class_names,
+        "feature_names": get_architecture("1.0.0").feature_names,
         "config": {"imported": True, "source_filename": source_filename},
         "metrics": metrics,
     }
@@ -113,10 +127,16 @@ def load_state_dict_safely(path: str | Path) -> RockNetModel:
     return model
 
 
-def load_model(pt_path: str | Path, device: str | None = None) -> RockNetModel:
-    """Loads a ``state_dict`` produced either by this module or by the
-    legacy CLI — the .pt format is unchanged, so both are interchangeable."""
-    model = RockNetModel()
+def load_model(
+    pt_path: str | Path,
+    architecture: str = "1.0.0",
+    n_classes: int = 2,
+    hidden_width: int | None = None,
+    device: str | None = None,
+) -> torch.nn.Module:
+    """Loads a ``state_dict`` into a fresh model of the given architecture.
+    For 1.0.0 the .pt format is the legacy CLI's, so both are interchangeable."""
+    model = build_model(architecture, n_classes=n_classes, hidden_width=hidden_width)
     state_dict = torch.load(pt_path, map_location=device or "cpu")
     model.load_state_dict(state_dict)
     model.eval()

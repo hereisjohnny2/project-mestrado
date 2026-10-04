@@ -103,6 +103,8 @@ export default function SegmentationPage() {
   }, [results, sortKey, sortDesc]);
 
   const focused = results.find((r) => r.id === focusId) ?? sorted[0] ?? null;
+  const runModel = useMemo(() => models.find((m) => m.id === activeRun?.model_id) ?? null, [models, activeRun]);
+  const colorOf = (name: string) => runModel?.classes.find((c) => c.name === name)?.color ?? "#000000";
 
   const openRun = (run: SegmentationRun) => {
     eventSourceRef.current?.close();
@@ -215,7 +217,7 @@ export default function SegmentationPage() {
               >
                 {models.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} v{m.version}
+                    {m.name} v{m.version} · {m.architecture}
                   </option>
                 ))}
               </select>
@@ -363,6 +365,14 @@ export default function SegmentationPage() {
                       className="w-full rounded-lg border border-zinc-800"
                     />
                   )}
+                  <div className="mt-2 flex flex-wrap gap-3 text-xs text-zinc-300">
+                    {Object.entries(focused.class_fractions).map(([name, frac]) => (
+                      <span key={name} className="flex items-center gap-1.5">
+                        <span className="h-3 w-3 rounded-sm border border-zinc-700" style={{ backgroundColor: colorOf(name) }} />
+                        {name}: {(frac * 100).toFixed(2)}%
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

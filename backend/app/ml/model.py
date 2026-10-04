@@ -27,3 +27,21 @@ class RockNetModel(nn.Module):
         x = F.relu(self.fc3(x))
         x = self.fc4(x)
         return F.log_softmax(x, dim=1)
+
+
+class RockNetV2(nn.Module):
+    """Architecture 2.0.0: ``n_features -> W -> W/2 -> n_classes`` MLP over the
+    normalized color attributes of :mod:`features`. Same ``log_softmax``
+    output convention as ``RockNetModel`` so inference stays an ``argmax``."""
+
+    def __init__(self, n_features: int = 8, hidden_width: int = 32, n_classes: int = 2):
+        super().__init__()
+        self.fc1 = nn.Linear(n_features, hidden_width)
+        self.fc2 = nn.Linear(hidden_width, max(hidden_width // 2, 2))
+        self.fc3 = nn.Linear(max(hidden_width // 2, 2), n_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return F.log_softmax(x, dim=1)

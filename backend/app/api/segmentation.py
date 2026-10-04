@@ -16,6 +16,7 @@ from ..db import models
 from ..db.session import get_db
 from .deps import get_current_user, get_owned_image, get_owned_model, get_owned_project, get_owned_result, get_owned_run
 from ..schemas import SegmentationResultOut, SegmentationRunCreate, SegmentationRunOut
+from ..services.classes import output_class_names
 from ..services.segmentation_runs import run_progress, start_run
 
 router = APIRouter()
@@ -44,6 +45,7 @@ def _result_out(result: models.Result) -> SegmentationResultOut:
         image_id=result.image_id,
         filename=result.image.filename,
         porosity=result.porosity,
+        class_fractions=result.class_fractions,
         time_ms=result.time_ms,
     )
 
@@ -160,11 +162,12 @@ def export_run(run_id: str, fmt: str = "csv", user: models.User = Depends(get_cu
         raise HTTPException(422, "fmt must be one of: csv, zip")
     run = get_owned_run(db, user, run_id)
 
+    names = output_class_names(run.model)
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["nome", "porosidade", "tempo_ms"])
+    writer.writerow(["nome", "porosidade", "tempo_ms", *names])
     for r in run.results:
-        writer.writerow([r.image.filename, r.porosity, r.time_ms])
+        writer.writerow([r.image.filename, r.porosity, r.time_ms, *(r.class_fractions.get(n, "") for n in names)])
     csv_text = buf.getvalue()
 
     if fmt == "csv":

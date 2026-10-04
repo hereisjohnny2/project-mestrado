@@ -128,7 +128,6 @@ def test_dataset_stats_match_dat_contents(tmp_path):
     dataset_path = tmp_path / "fixture-dataset.dat"
     _make_dataset_file(dataset_path, n_per_class=25)
 
-    stats = dataset_stats(str(dataset_path))
+    stats = dataset_stats(str(dataset_path), ["Poro", "Solido"])
     assert stats["n_pixels"] == 50
-    assert stats["n_pore"] == 25
-    assert stats["n_solid"] == 25
+    assert stats["class_counts"] == {"Poro": 25, "Solido": 25}

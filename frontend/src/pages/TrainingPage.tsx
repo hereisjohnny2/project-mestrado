@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  ArchitectureId,
+  ArchitectureInfo,
+  ClassDef,
   DatasetHistogram,
   DatasetSummary,
   ModelSummary,
   TrainingJob,
+  classLabel,
   datasetDownloadUrl,
   generateDataset,
   importDataset,
   importModel,
   getDatasetHistogram,
   getTrainingJob,
+  listArchitectures,
   listDatasets,
   listModels,
   modelDownloadUrl,
@@ -20,7 +25,49 @@ import {
 } from "../api/client";
 import { useToast } from "../components/ToastProvider";
 
-const DEFAULT_CONFIG = { epochs: 5, learning_rate: 0.0025, batch_size: 16, split_ratio: 0.8, seed: "" };
+const DEFAULT_CONFIG = {
+  epochs: 5,
+  learning_rate: 0.0025,
+  batch_size: 16,
+  split_ratio: 0.8,
+  seed: "",
+  architecture: "1.0.0" as ArchitectureId,
+  hidden_width: 32,
+};
+
+function ArchitecturePanel({ info, nClasses }: { info: ArchitectureInfo; nClasses: number }) {
+  return (
+    <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 text-sm">
+      <p className="font-medium text-zinc-100">
+        {info.title} <span className="ml-1 text-xs text-zinc-500">{info.id}</span>
+      </p>
+      <p className="mt-1 text-zinc-400">{info.description}</p>
+      <dl className="mt-3 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-[auto_1fr]">
+        <dt className="text-zinc-500">Entrada por pixel</dt>
+        <dd className="flex flex-wrap gap-1">
+          {info.feature_names.map((f) => (
+            <span key={f} className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-zinc-200">
+              {f}
+            </span>
+          ))}
+          <span className="ml-1 text-zinc-500">({info.input_scale})</span>
+        </dd>
+        <dt className="text-zinc-500">Camadas</dt>
+        <dd className="font-mono text-zinc-200">{info.layers.join(" → ")}</dd>
+        <dt className="text-zinc-500">Saídas</dt>
+        <dd className="text-zinc-300">
+          {info.supports_multiclass ? `${nClasses} — uma por classe do projeto` : "2 — classe de índice 1 (poro) vs. resto"}
+        </dd>
+      </dl>
+      {!info.supports_multiclass && nClasses > 2 && (
+        <p className="mt-3 rounded border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+          Este dataset tem {nClasses} classes. A arquitetura {info.id} é binária: vai aprender apenas "poro vs. resto" e
+          agrupar as demais classes em "Outros".
+        </p>
+      )}
+    </div>
+  );
+}
 
 function Bars({ values, color }: { values: number[]; color: string }) {
   const max = Math.max(1, ...values);
@@ -73,25 +120,26 @@ function LossChart({ values, totalEpochs }: { values: number[]; totalEpochs?: nu
   );
 }
 
-function Histogram({ histogram }: { histogram: DatasetHistogram }) {
+function Histogram({ histogram, classes }: { histogram: DatasetHistogram; classes: ClassDef[] }) {
   return (
-    <div className="grid grid-cols-2 gap-6">
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-poro">Poro</p>
-        <div className="space-y-2">
-          <Bars values={histogram.pore.r} color="#ef4444" />
-          <Bars values={histogram.pore.g} color="#22c55e" />
-          <Bars values={histogram.pore.b} color="#3b82f6" />
-        </div>
-      </div>
-      <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-solido">Sólido</p>
-        <div className="space-y-2">
-          <Bars values={histogram.solid.r} color="#ef4444" />
-          <Bars values={histogram.solid.g} color="#22c55e" />
-          <Bars values={histogram.solid.b} color="#3b82f6" />
-        </div>
-      </div>
+    <div className="grid grid-cols-2 gap-6 md:grid-cols-3">
+      {classes.map((c) => {
+        const h = histogram.classes[c.name];
+        if (!h) return null;
+        return (
+          <div key={c.index}>
+            <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide" style={{ color: c.color }}>
+              <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: c.color }} />
+              {c.name}
+            </p>
+            <div className="space-y-2">
+              <Bars values={h.r} color="#ef4444" />
+              <Bars values={h.g} color="#22c55e" />
+              <Bars values={h.b} color="#3b82f6" />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -106,6 +154,7 @@ export default function TrainingPage() {
   const [generating, setGenerating] = useState(false);
 
   const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [architectures, setArchitectures] = useState<ArchitectureInfo[]>([]);
   const [job, setJob] = useState<TrainingJob | null>(null);
   const [starting, setStarting] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -155,6 +204,15 @@ export default function TrainingPage() {
   useEffect(() => {
     return () => eventSourceRef.current?.close();
   }, []);
+
+  const nClasses = selectedDataset?.classes.length ?? 2;
+  useEffect(() => {
+    listArchitectures(nClasses, config.hidden_width)
+      .then(setArchitectures)
+      .catch((e) => showError(e, "Não foi possível carregar as arquiteturas."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nClasses, config.hidden_width]);
+  const architecture = architectures.find((a) => a.id === config.architecture) ?? null;
 
   const onGenerateDataset = async () => {
     if (!projectId) return;
@@ -263,6 +321,8 @@ export default function TrainingPage() {
         batch_size: config.batch_size,
         split_ratio: config.split_ratio,
         seed: config.seed === "" ? null : Number(config.seed),
+        architecture: config.architecture,
+        hidden_width: config.architecture === "2.0.0" ? config.hidden_width : null,
       });
       setJob(created);
       rememberJob(created.id);
@@ -344,12 +404,12 @@ export default function TrainingPage() {
 
             {selectedDataset && (
               <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-300">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded-sm bg-poro" /> Poro: {selectedDataset.n_pore.toLocaleString()}
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded-sm bg-solido" /> Sólido: {selectedDataset.n_solid.toLocaleString()}
-                </span>
+                {selectedDataset.classes.map((c) => (
+                  <span key={c.index} className="flex items-center gap-1.5">
+                    <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: c.color }} /> {c.name}:{" "}
+                    {(selectedDataset.class_counts[c.name] ?? 0).toLocaleString()}
+                  </span>
+                ))}
                 <a
                   href={datasetDownloadUrl(selectedDataset.id)}
                   className="ml-auto rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
@@ -359,12 +419,12 @@ export default function TrainingPage() {
               </div>
             )}
 
-            {histogram && (
+            {histogram && selectedDataset && (
               <div className="mt-6">
                 <p className="mb-2 text-sm text-zinc-400">
                   Histograma RGB por classe — mostra se as classes são separáveis no espaço de cor.
                 </p>
-                <Histogram histogram={histogram} />
+                <Histogram histogram={histogram} classes={selectedDataset.classes} />
               </div>
             )}
           </div>
@@ -374,6 +434,37 @@ export default function TrainingPage() {
       {/* Training */}
       <section className="mt-8 rounded-lg border border-zinc-800 p-5">
         <h2 className="text-lg font-medium text-zinc-100">Treino</h2>
+
+        <div className="mt-4 flex flex-wrap items-end gap-4">
+          <label className="flex flex-col gap-1 text-xs text-zinc-400">
+            Arquitetura
+            <select
+              value={config.architecture}
+              onChange={(e) => setConfig((c) => ({ ...c, architecture: e.target.value as ArchitectureId }))}
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200"
+            >
+              {(architectures.length ? architectures : [{ id: "1.0.0", title: "RGB por pixel (dissertação)" }]).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.id} — {a.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {config.architecture === "2.0.0" && (
+            <label className="flex flex-col gap-1 text-xs text-zinc-400">
+              Largura oculta (W)
+              <input
+                type="number"
+                min={2}
+                max={1024}
+                value={config.hidden_width}
+                onChange={(e) => setConfig((c) => ({ ...c, hidden_width: Math.max(2, Number(e.target.value) || 2) }))}
+                className="w-28 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-200"
+              />
+            </label>
+          )}
+        </div>
+        {architecture && <ArchitecturePanel info={architecture} nClasses={nClasses} />}
 
         <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
           <label className="flex flex-col gap-1 text-xs text-zinc-400">
@@ -475,8 +566,18 @@ export default function TrainingPage() {
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <Stat label="Acurácia" value={`${(job.metrics.accuracy * 100).toFixed(1)}%`} />
                   <Stat label="Duração" value={`${Math.round(job.metrics.duration_ms)} ms`} />
-                  <Stat label="Precisão poro" value={(job.metrics.per_class.pore.precision * 100).toFixed(1) + "%"} />
-                  <Stat label="Recall poro" value={(job.metrics.per_class.pore.recall * 100).toFixed(1) + "%"} />
+                  {(() => {
+                    // Pore is the dataset's class 1; in a "pore vs. rest" model it is the last output.
+                    const entries = Object.entries(job.metrics.per_class);
+                    const datasetPore = selectedDataset?.classes[0]?.name ?? "";
+                    const [poreName, pore] = entries.find(([k]) => k === datasetPore) ?? entries[entries.length - 1] ?? ["", null];
+                    return pore ? (
+                      <>
+                        <Stat label={`Precisão ${classLabel(poreName)}`} value={(pore.precision * 100).toFixed(1) + "%"} />
+                        <Stat label={`Recall ${classLabel(poreName)}`} value={(pore.recall * 100).toFixed(1) + "%"} />
+                      </>
+                    ) : null;
+                  })()}
                 </div>
 
                 <div>
@@ -497,7 +598,7 @@ export default function TrainingPage() {
                   <tbody>
                     {Object.entries(job.metrics.per_class).map(([cls, m]) => (
                       <tr key={cls} className="border-t border-zinc-800">
-                        <td className="py-1.5 capitalize">{cls === "pore" ? "Poro" : "Sólido"}</td>
+                        <td className="py-1.5">{classLabel(cls)}</td>
                         <td>{(m.precision * 100).toFixed(1)}%</td>
                         <td>{(m.recall * 100).toFixed(1)}%</td>
                         <td>{(m.f1 * 100).toFixed(1)}%</td>
@@ -566,6 +667,9 @@ export default function TrainingPage() {
               <div>
                 <p className="text-sm font-medium text-zinc-100">
                   {m.name} <span className="text-zinc-500">v{m.version}</span>
+                  <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400" title="Arquitetura">
+                    {m.architecture}
+                  </span>
                   {m.config.imported === true && (
                     <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">importado</span>
                   )}

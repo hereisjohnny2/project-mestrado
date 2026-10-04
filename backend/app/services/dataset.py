@@ -2,12 +2,14 @@
 format the legacy training core expects (plan §4.3 / §4.4,
 ``POST /projects/{id}/datasets``).
 
-Masks are single-channel PNGs with pixel values ``0`` (unannotated),
-``1`` (poro) or ``2`` (solido) — see
+Masks are single-channel PNGs whose pixel value is the class index (``0`` =
+unannotated, ``1..K`` = the project's classes) — see
 ``frontend/src/features/annotation/AnnotationCanvas.tsx``. For every
 annotated pixel we look up the RGB of the same coordinate in the source
 image and emit a ``R\\tG\\tB\\tLabel`` row, exactly the tabulation
-``legacy/rock-image-annotation`` produced by hand.
+``legacy/rock-image-annotation`` produced by hand. The label is the class
+name, and the class list is stored with the dataset so the labels stay
+interpretable.
 """
 
 from __future__ import annotations
@@ -21,8 +23,7 @@ from PIL import Image as PILImage
 
 from ..core.storage import ProjectStorage, get_settings, sha256_file
 from ..db import models
-
-LABEL_NAMES = {1: "Poro", 2: "Solido"}
+from .classes import classes_from_labels
 
 
 class EmptyDatasetError(ValueError):
@@ -48,26 +49,22 @@ def generate_dataset(project: models.Project, storage: ProjectStorage) -> dict:
     dataset_id = str(uuid.uuid4())
     dest = storage.datasets / f"{dataset_id}.dat"
 
-    n_pore = 0
-    n_solid = 0
+    classes = [dict(c) for c in project.classes]
+    counts = {c["name"]: 0 for c in classes}
     with open(dest, "w") as f:
         for image in annotated:
             rgb = np.asarray(PILImage.open(storage_dir / image.path).convert("RGB"))
             mask = np.asarray(PILImage.open(storage_dir / image.annotation.mask_path).convert("L"))
 
-            for label_value, label_name in LABEL_NAMES.items():
-                ys, xs = np.where(mask == label_value)
+            for cls in classes:
+                ys, xs = np.where(mask == cls["index"])
                 if ys.size == 0:
                     continue
-                if label_value == 1:
-                    n_pore += int(ys.size)
-                else:
-                    n_solid += int(ys.size)
-                pixels = rgb[ys, xs]
-                for r, g, b in pixels:
-                    f.write(f"{r}\t{g}\t{b}\t{label_name}\n")
+                counts[cls["name"]] += int(ys.size)
+                for r, g, b in rgb[ys, xs]:
+                    f.write(f"{r}\t{g}\t{b}\t{cls['name']}\n")
 
-    n_pixels = n_pore + n_solid
+    n_pixels = sum(counts.values())
     if n_pixels == 0:
         dest.unlink(missing_ok=True)
         raise EmptyDatasetError("no annotated pixels found")
@@ -76,8 +73,8 @@ def generate_dataset(project: models.Project, storage: ProjectStorage) -> dict:
         "id": dataset_id,
         "path": str(dest.relative_to(storage_dir)),
         "n_pixels": n_pixels,
-        "n_pore": n_pore,
-        "n_solid": n_solid,
+        "classes": classes,
+        "class_counts": counts,
         "sha256": sha256_file(dest),
     }
 
@@ -89,15 +86,14 @@ def dataset_absolute_path(dataset: models.Dataset) -> Path:
 def import_dataset(source, storage: ProjectStorage) -> dict:
     """Stores an uploaded legacy ``.dat`` (``R\\tG\\tB\\tLabel`` per line) as a
     dataset. ``source`` is a binary file object. Every line is validated —
-    the legacy loader would crash mid-training on a malformed one — and the
-    label ``Poro`` counts as pore, anything else as solid, like
-    ``ml.dataset.load_data_from_file``."""
+    the legacy loader would crash mid-training on a malformed one. The
+    classes are the distinct labels found, ``Poro`` first (see
+    ``classes_from_labels``)."""
     storage_dir = get_settings().storage_dir
     dataset_id = str(uuid.uuid4())
     dest = storage.datasets / f"{dataset_id}.dat"
 
-    n_pore = 0
-    n_solid = 0
+    counts: dict[str, int] = {}
     try:
         with open(dest, "w") as out:
             for number, raw in enumerate(io.TextIOWrapper(source, encoding="utf-8", errors="replace"), start=1):
@@ -113,24 +109,22 @@ def import_dataset(source, storage: ProjectStorage) -> dict:
                     raise InvalidDatasetError(
                         f"linha {number} inválida: esperado 'R<TAB>G<TAB>B<TAB>Rótulo' com R,G,B entre 0 e 255"
                     ) from None
-                if fields[3] == "Poro":
-                    n_pore += 1
-                else:
-                    n_solid += 1
+                counts[fields[3]] = counts.get(fields[3], 0) + 1
                 out.write(line + "\n")
     except Exception:
         dest.unlink(missing_ok=True)
         raise
 
-    if n_pore + n_solid == 0:
+    if not counts:
         dest.unlink(missing_ok=True)
         raise InvalidDatasetError("arquivo vazio")
 
+    classes = classes_from_labels(list(counts))
     return {
         "id": dataset_id,
         "path": str(dest.relative_to(storage_dir)),
-        "n_pixels": n_pore + n_solid,
-        "n_pore": n_pore,
-        "n_solid": n_solid,
+        "n_pixels": sum(counts.values()),
+        "classes": classes,
+        "class_counts": {c["name"]: counts[c["name"]] for c in classes},
         "sha256": sha256_file(dest),
     }

@@ -23,9 +23,16 @@ class Base(DeclarativeBase):
     pass
 
 
-class AnnotationClass(str, enum.Enum):
-    PORE = "poro"
-    SOLID = "solido"
+# Per-project class list. Index 0 is "unannotated" in masks; index 1 is, by
+# convention, the class whose pixel fraction is reported as porosity.
+DEFAULT_CLASSES: list[dict] = [
+    {"index": 1, "name": "Poro", "color": "#2563eb"},
+    {"index": 2, "name": "Sólido", "color": "#ea580c"},
+]
+
+
+def default_classes() -> list[dict]:
+    return [dict(c) for c in DEFAULT_CLASSES]
 
 
 class RunStatus(str, enum.Enum):
@@ -55,6 +62,7 @@ class Project(Base):
     # init_db); such legacy rows have no owner and are not visible to anyone.
     owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    classes: Mapped[list] = mapped_column(JSON, nullable=False, default=default_classes)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     owner: Mapped["User | None"] = relationship(back_populates="projects")
@@ -97,8 +105,10 @@ class Dataset(Base):
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
     path: Mapped[str] = mapped_column(String, nullable=False)
     n_pixels: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_pore: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_solid: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Snapshot of the project's classes when the dataset was built, so the
+    # .dat labels stay interpretable even if the project is edited later.
+    classes: Mapped[list] = mapped_column(JSON, nullable=False, default=default_classes)
+    class_counts: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     sha256: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -113,6 +123,7 @@ class MLModel(Base):
     dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id"))
     name: Mapped[str] = mapped_column(String, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    architecture: Mapped[str] = mapped_column(String, nullable=False, default="1.0.0")
     pt_path: Mapped[str] = mapped_column(String, nullable=False)
     json_path: Mapped[str] = mapped_column(String, nullable=False)
     metrics: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -121,6 +132,10 @@ class MLModel(Base):
 
     dataset: Mapped[Dataset] = relationship(back_populates="models")
     runs: Mapped[list["Run"]] = relationship(back_populates="model", cascade="all, delete-orphan")
+
+    @property
+    def classes(self) -> list:
+        return self.dataset.classes
 
 
 class Run(Base):
@@ -144,6 +159,7 @@ class Result(Base):
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"))
     image_id: Mapped[str] = mapped_column(ForeignKey("images.id"))
     porosity: Mapped[float] = mapped_column(Float, nullable=False)
+    class_fractions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     time_ms: Mapped[float] = mapped_column(Float, nullable=False)
     bin_path: Mapped[str] = mapped_column(String, nullable=False)
     overlay_path: Mapped[str] = mapped_column(String, nullable=False)

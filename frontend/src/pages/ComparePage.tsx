@@ -4,6 +4,7 @@ import {
   ModelSummary,
   SegmentationResult,
   SegmentationRun,
+  classLabel,
   getRunResults,
   listModels,
   listRuns,
@@ -27,10 +28,11 @@ function metricRows(a: ModelSummary, b: ModelSummary): MetricRow[] {
   const rows: MetricRow[] = [
     { label: "Acurácia", a: a.metrics.accuracy, b: b.metrics.accuracy, format: pct, higherIsBetter: true },
   ];
-  for (const [cls, title] of [["pore", "Poro"], ["solid", "Sólido"]] as const) {
+  const classKeys = [...new Set([...Object.keys(a.metrics.per_class), ...Object.keys(b.metrics.per_class)])];
+  for (const cls of classKeys) {
     for (const [key, label] of [["precision", "precisão"], ["recall", "recall"], ["f1", "F1"], ["iou", "IoU"]] as const) {
       rows.push({
-        label: `${title} — ${label}`,
+        label: `${classLabel(cls)} — ${label}`,
         a: a.metrics.per_class[cls]?.[key] ?? null,
         b: b.metrics.per_class[cls]?.[key] ?? null,
         format: pct,
@@ -93,7 +95,7 @@ function MultiLossChart({ a, b }: { a: number[]; b: number[] }) {
 }
 
 function modelLabel(m: ModelSummary) {
-  return `${m.name} v${m.version}`;
+  return `${m.name} v${m.version} · ${m.architecture}`;
 }
 
 export default function ComparePage() {

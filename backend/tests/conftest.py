@@ -4,13 +4,16 @@ test, without touching its code (it uses bare imports like
 ``sys.path``, exactly as if it were being run as a script from inside
 ``legacy/rock-nn/``)."""
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LEGACY_ROCKNN_DIR = REPO_ROOT / "legacy" / "rock-nn"
+# ROCKSEG_LEGACY_DIR points the parity tests at another checkout of the
+# legacy CLI (e.g. an export of a given commit) while legacy/ is being edited.
+LEGACY_ROCKNN_DIR = Path(os.environ.get("ROCKSEG_LEGACY_DIR") or REPO_ROOT / "legacy" / "rock-nn")
 
 if str(LEGACY_ROCKNN_DIR) not in sys.path:
     sys.path.insert(0, str(LEGACY_ROCKNN_DIR))

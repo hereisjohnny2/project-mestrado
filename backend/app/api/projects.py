@@ -13,7 +13,8 @@ from ..core.storage import ProjectStorage, get_settings
 from ..db import models
 from ..db.session import get_db
 from .deps import get_current_user, get_owned_image, get_owned_project
-from ..schemas import ImageOut, ProjectCreate, ProjectDetailOut, ProjectOut, ProjectUpdate
+from ..schemas import ClassDef, ClassesUpdate, ImageOut, ProjectCreate, ProjectDetailOut, ProjectOut, ProjectUpdate
+from ..services.classes import ClassInUseError, InvalidClassesError, replace_classes
 from ..services.images import UnsupportedImageError, ingest_image, mask_relative_path
 
 router = APIRouter()
@@ -54,9 +55,30 @@ def get_project(project_id: str, user: models.User = Depends(get_current_user), 
     return ProjectDetailOut(
         id=project.id,
         name=project.name,
+        classes=project.classes,
         created_at=project.created_at,
         images=[_image_out(img) for img in project.images],
     )
+
+
+@router.get("/projects/{project_id}/classes", response_model=list[ClassDef])
+def get_classes(project_id: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)) -> list:
+    return get_owned_project(db, user, project_id).classes
+
+
+@router.put("/projects/{project_id}/classes", response_model=list[ClassDef])
+def put_classes(
+    project_id: str, payload: ClassesUpdate, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list:
+    project = get_owned_project(db, user, project_id)
+    try:
+        classes = replace_classes(project, [c.model_dump() for c in payload.classes])
+    except InvalidClassesError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ClassInUseError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    db.commit()
+    return classes
 
 
 @router.patch("/projects/{project_id}", response_model=ProjectOut)

@@ -71,6 +71,7 @@ def my_projects(user: models.User = Depends(get_current_user), db: Session = Dep
             MyProjectOut(
                 id=project.id,
                 name=project.name,
+                classes=project.classes,
                 created_at=project.created_at,
                 n_images=len(project.images),
                 n_annotated=sum(1 for img in project.images if img.annotation is not None),
@@ -97,6 +98,8 @@ def my_models(user: models.User = Depends(get_current_user), db: Session = Depen
             dataset_id=m.dataset_id,
             name=m.name,
             version=m.version,
+            architecture=m.architecture,
+            classes=m.classes,
             metrics=m.metrics,
             config=m.config,
             created_at=m.created_at,
